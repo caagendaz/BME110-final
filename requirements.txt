@@ -1,0 +1,4 @@
+biopython==1.85
+ollama==0.6.0
+streamlit==1.48.1
+pandas==2.3.1
