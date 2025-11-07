@@ -170,6 +170,8 @@ def main():
                         # Run the tool
                         with st.spinner(f"Running {tool_name}..."):
                             try:
+                                summary = None
+                                
                                 # Handle genome queries specially
                                 if tool_name == 'genome_query':
                                     sequence = emboss.query_ucsc_genome(
@@ -186,14 +188,28 @@ def main():
                                         parameters.get('genome', 'hg38'),
                                         parameters.get('track', 'gencode')
                                     )
+                                    
+                                    # Get natural language summary
+                                    with st.spinner("Generating natural language summary..."):
+                                        summary = emboss.summarize_gene_info(gene_info)
+                                    
                                     analysis_result = gene_info
                                 else:
                                     analysis_result = emboss.run_tool(tool_name, **parameters)
                                 
                                 st.markdown('<div class="success-box">', unsafe_allow_html=True)
                                 st.success("Analysis completed!")
-                                st.subheader("Results:")
-                                st.code(analysis_result, language="text")
+                                
+                                # Show natural language summary for gene queries
+                                if summary:
+                                    st.subheader("📝 Answer:")
+                                    st.info(summary)
+                                
+                                # Expandable section for detailed results
+                                with st.expander("📊 Detailed Results"):
+                                    st.subheader("Detailed Information:")
+                                    st.code(analysis_result, language="text")
+                                
                                 st.markdown('</div>', unsafe_allow_html=True)
                                 
                                 # Download button

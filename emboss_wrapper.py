@@ -601,19 +601,182 @@ Interpretation:
             return f"Error: Could not connect to Ensembl. Check internet connection."
         except Exception as e:
             return f"Error querying gene info from Ensembl: {str(e)}\nExample: query_gene_info('ALKBH1')"
+
+    def get_best_transcript_for_gene(self, gene_name: str, species: str = 'homo_sapiens') -> Optional[str]:
+        """Return the best transcript ID for a gene (prefer protein_coding, longest transcript)
+
+        Args:
+            gene_name: Gene symbol
+            species: species for Ensembl (default homo_sapiens)
+
+        Returns:
+            transcript_id (str) or None
+        """
+        try:
+            base_url = "https://rest.ensembl.org"
+            headers = {"Content-Type": "application/json"}
+
+            # Get gene stable id via xrefs by symbol
+            search_url = f"{base_url}/xrefs/symbol/{species}/{gene_name}?external_db=HGNC"
+            r = requests.get(search_url, headers=headers, timeout=30)
+            r.raise_for_status()
+            xrefs = r.json()
+            if not xrefs:
+                return None
+            gene_id = xrefs[0].get('id')
+
+            # Lookup gene with transcripts expanded
+            gene_url = f"{base_url}/lookup/id/{gene_id}?expand=1"
+            gr = requests.get(gene_url, headers=headers, timeout=30)
+            gr.raise_for_status()
+            gene_info = gr.json()
+
+            transcripts = gene_info.get('Transcript', [])
+            # Filter protein_coding transcripts
+            prot_trans = [t for t in transcripts if t.get('biotype') == 'protein_coding']
+            candidates = prot_trans if prot_trans else transcripts
+
+            # Choose longest transcript (by length)
+            best = None
+            best_len = 0
+            for t in candidates:
+                start = t.get('start', 0)
+                end = t.get('end', 0)
+                length = end - start + 1
+                if length > best_len:
+                    best_len = length
+                    best = t.get('id')
+
+            return best
+        except Exception:
+            return None
+
+    def get_transcript_sequence(self, transcript_id: str, seq_type: str = 'cdna') -> str:
+        """Fetch sequence for a transcript from Ensembl
+
+        Args:
+            transcript_id: Ensembl transcript ID (e.g., ENST...)
+            seq_type: 'cdna', 'cds', or 'genomic'
+
+        Returns:
+            sequence string or error message starting with 'Error'
+        """
+        try:
+            base_url = "https://rest.ensembl.org"
+            headers = {"Content-Type": "text/plain"}
+            seq_url = f"{base_url}/sequence/id/{transcript_id}?type={seq_type}"
+            r = requests.get(seq_url, headers=headers, timeout=30)
+            r.raise_for_status()
+            seq = r.text.strip()
+            if not seq:
+                return f"Error: Empty sequence returned for {transcript_id}"
+            return seq
+        except requests.exceptions.Timeout:
+            return "Error: Ensembl sequence request timed out"
+        except Exception as e:
+            return f"Error fetching sequence for {transcript_id}: {str(e)}"
+    
+    def summarize_gene_info(self, gene_data: str) -> str:
+        """Summarize detailed gene information into natural language
+        
+        Args:
+            gene_data: Raw gene information output from query_gene_info()
+        
+        Returns:
+            str: Natural language summary of the gene information
+        """
+        try:
+            # Use Ollama to generate a natural language summary
+            from ollama import Client
+            
+            client = Client(host='http://192.168.128.1:11434')
+            
+            prompt = f"""You are a helpful bioinformatics assistant. 
+            
+Summarize this gene information in 2-3 sentences, focusing on the main transcript (usually the first one listed). 
+Answer the specific question briefly and naturally.
+
+Gene data:
+{gene_data}
+
+Provide a concise, natural language summary suitable for a user query answer. 
+Focus on: number of exons, CDS length, and transcript length for the main transcript.
+Keep it conversational and friendly."""
+
+            response = client.generate(
+                model='gemma3:4b',
+                prompt=prompt,
+                stream=False
+            )
+            
+            summary = response['response'].strip()
+            return summary
+        
+        except Exception as e:
+            # If summarization fails, fall back to extracting key info manually
+            lines = gene_data.split('\n')
+            
+            # Try to extract key information
+            summary_lines = []
+            for i, line in enumerate(lines):
+                if 'Total Transcripts:' in line:
+                    summary_lines.append(line.strip())
+                if 'Number of exons:' in line and i < 50:  # First occurrence (main transcript)
+                    summary_lines.append(line.strip())
+                if 'CDS (coding region) length:' in line and i < 50:
+                    summary_lines.append(line.strip())
+                if 'Full transcript length' in line and i < 50:
+                    summary_lines.append(line.strip())
+            
+            if summary_lines:
+                return " | ".join(summary_lines)
+            else:
+                return "Gene information retrieved. See detailed results below."
+    
+    def _resolve_sequence_from_gene(self, gene_name: str, seq_type: str = 'cdna') -> Optional[str]:
+        """Helper: Given a gene name, return its sequence (or None if failed)
+        
+        Args:
+            gene_name: Gene symbol (e.g., 'ALKBH1')
+            seq_type: 'cdna' (default), 'cds', or 'genomic'
+        
+        Returns:
+            sequence string or None
+        """
+        try:
+            transcript_id = self.get_best_transcript_for_gene(gene_name)
+            if not transcript_id:
+                return None
+            seq = self.get_transcript_sequence(transcript_id, seq_type=seq_type)
+            if seq.startswith('Error'):
+                return None
+            return seq
+        except Exception:
+            return None
     
     def run_tool(self, tool_name: str, **kwargs) -> str:
         """Generic method to run any EMBOSS tool
         
         Args:
             tool_name: Name of the tool to run (natural language or EMBOSS name)
-            **kwargs: Tool-specific parameters
+            **kwargs: Tool-specific parameters (can include 'gene_name' or 'sequence')
         
         Returns:
             str: Tool output or error message
         """
         # Map natural language name to EMBOSS command if needed
         emboss_name = self.tool_map.get(tool_name.lower(), tool_name.lower())
+        
+        # If a gene_name is provided but no sequence, try to resolve the sequence first
+        if ('gene_name' in kwargs or 'gene' in kwargs) and 'sequence' not in kwargs:
+            gene = kwargs.get('gene_name') or kwargs.get('gene')
+            seq = self._resolve_sequence_from_gene(gene)
+            if seq:
+                kwargs['sequence'] = seq
+                # Also keep gene name for context in output
+                kwargs['_gene_name'] = gene
+            else:
+                return f"Could not resolve sequence for gene: {gene}"
         
         # Route to specific methods
         if emboss_name == 'transeq':
@@ -631,7 +794,12 @@ Interpretation:
         elif emboss_name == 'sixpack':
             return self.get_six_frame_translation(kwargs.get('sequence', ''))
         elif emboss_name == 'gc_content':
-            return self.calculate_gc_content(kwargs.get('sequence', ''))
+            result = self.calculate_gc_content(kwargs.get('sequence', ''))
+            # If we resolved from a gene, add context
+            if '_gene_name' in kwargs:
+                gene = kwargs['_gene_name']
+                result = f"Gene {gene} GC Content:\n\n{result}"
+            return result
         elif emboss_name == 'download_sequence':
             # Check if using UCSC API (genome-based)
             if 'genome' in kwargs:
