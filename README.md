@@ -206,6 +206,6 @@ This is an educational project for BME110 at UCSC.
 
 **Built with:** EMBOSS | BioPython | Ollama | Streamlit
 
-**Author:** BME110 Student  
-**Course:** BME110 - Bioinformatics Tool Project  
+**Author:** Cagn Steinbrecher  
+**Course:** BME110  
 **Institution:** UC Santa Cruz
