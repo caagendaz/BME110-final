@@ -20,7 +20,7 @@ class EMBOSSWrapper:
         # Set NCBI Entrez email for downloads
         Entrez.email = "user@bioquery.local"
         
-        # Map natural language to EMBOSS commands
+        # Map natural language to EMBOSS commands (shortcuts for common operations)
         self.tool_map = {
             'translate': 'transeq',
             'reverse': 'revseq',
@@ -37,7 +37,9 @@ class EMBOSSWrapper:
             'consensus': 'cons',
             'gc': 'gc_content',
             'download': 'download_sequence',
-            'geecee': 'gc_content'
+            'geecee': 'gc_content',
+            'isoelectric': 'iep',
+            'charge': 'iep'
         }
         
         # Tool descriptions for user guidance
@@ -56,8 +58,13 @@ class EMBOSSWrapper:
             'dotplot': 'Create dot plots between sequences',
             'consensus': 'Generate consensus sequence',
             'gc': 'Calculate GC content of a sequence',
-            'download': 'Download sequence from NCBI database'
+            'download': 'Download sequence from NCBI database',
+            'isoelectric': 'Calculate isoelectric point of protein',
+            'iep': 'Calculate isoelectric point of protein'
         }
+        
+        # Cache for available EMBOSS tools
+        self.available_emboss_tools = None
         
         # Verify EMBOSS installation
         self.check_emboss()
@@ -88,6 +95,56 @@ class EMBOSSWrapper:
         except subprocess.TimeoutExpired:
             print("✗ EMBOSS check timed out")
             return False
+    
+    def discover_all_emboss_tools(self) -> List[str]:
+        """Discover all available EMBOSS tools by checking which have the EMBOSS help signature
+        
+        Returns:
+            list: Names of all available EMBOSS tools (deduplicated)
+        """
+        if self.available_emboss_tools is not None:
+            return self.available_emboss_tools
+        
+        try:
+            # Get the bin directory where EMBOSS tools are located
+            result = subprocess.run(
+                ['which', 'transeq'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            if result.returncode != 0:
+                return []
+            
+            bin_dir = os.path.dirname(result.stdout.strip())
+            tools = set()  # Use set to avoid duplicates
+            
+            # Check each executable in the bin directory
+            for filename in os.listdir(bin_dir):
+                filepath = os.path.join(bin_dir, filename)
+                if os.path.isfile(filepath) and os.access(filepath, os.X_OK):
+                    # Quick check: see if it responds to -help with EMBOSS signature
+                    try:
+                        result = subprocess.run(
+                            [filepath, '-help'],
+                            capture_output=True,
+                            timeout=0.5,
+                            text=True
+                        )
+                        # EMBOSS tools show "EMBOSS" or the tool version in help
+                        if 'EMBOSS' in result.stdout or 'EMBOSS' in result.stderr or 'Version:' in result.stdout:
+                            # Remove leading underscore if present (conda adds these)
+                            tool_name = filename.lstrip('_')
+                            tools.add(tool_name)
+                    except (subprocess.TimeoutExpired, Exception):
+                        pass
+            
+            self.available_emboss_tools = sorted(list(tools))
+            return self.available_emboss_tools
+        
+        except Exception as e:
+            print(f"Error discovering EMBOSS tools: {e}")
+            return []
     
     def get_available_tools(self) -> Dict[str, str]:
         """Get list of available tools and their descriptions
@@ -757,6 +814,11 @@ Keep it conversational and friendly."""
     def run_tool(self, tool_name: str, **kwargs) -> str:
         """Generic method to run any EMBOSS tool
         
+        Supports:
+        - Specific hardcoded implementations for common tools (transeq, revseq, etc.)
+        - Generic fallback for any other EMBOSS tool (iep, charge, etc.)
+        - Gene-based access: any tool can accept gene_name and auto-resolve to sequence
+        
         Args:
             tool_name: Name of the tool to run (natural language or EMBOSS name)
             **kwargs: Tool-specific parameters (can include 'gene_name' or 'sequence')
@@ -778,7 +840,7 @@ Keep it conversational and friendly."""
             else:
                 return f"Could not resolve sequence for gene: {gene}"
         
-        # Route to specific methods
+        # Route to specific hardcoded methods (optimized implementations)
         if emboss_name == 'transeq':
             return self.translate_sequence(kwargs.get('sequence', ''), kwargs.get('frame', 1))
         elif emboss_name == 'revseq':
@@ -818,7 +880,72 @@ Keep it conversational and friendly."""
                     kwargs.get('db', 'nucleotide')
                 )
         else:
-            return f"Tool '{tool_name}' not yet implemented"
+            # Generic fallback for any other EMBOSS tool (iep, charge, mwfilter, etc.)
+            return self._run_generic_emboss_tool(emboss_name, **kwargs)
+    
+    def _run_generic_emboss_tool(self, tool_name: str, **kwargs) -> str:
+        """Generic runner for any EMBOSS tool that accepts sequence input
+        
+        Args:
+            tool_name: EMBOSS tool name (e.g., 'iep', 'charge', 'mwfilter')
+            **kwargs: Parameters including 'sequence'
+        
+        Returns:
+            str: Tool output or error message
+        """
+        sequence = kwargs.get('sequence', '')
+        if not sequence:
+            return f"Error: No sequence provided for tool '{tool_name}'"
+        
+        try:
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.fasta', delete=False) as f:
+                f.write(f">input_seq\n{sequence}\n")
+                input_file = f.name
+            
+            output_file = input_file.replace('.fasta', f'_{tool_name}_output.txt')
+            
+            # Build command with the tool and basic parameters
+            cmd = [tool_name, '-sequence', input_file, '-outfile', output_file]
+            
+            # Add any additional parameters from kwargs (excluding internal/non-EMBOSS keys)
+            skip_keys = {'sequence', '_gene_name', 'gene_name', 'gene'}
+            for key, value in kwargs.items():
+                if key not in skip_keys and value is not None:
+                    # Convert kwargs to EMBOSS format (-param value)
+                    param_name = f'-{key.replace("_", "")}'
+                    cmd.extend([param_name, str(value)])
+            
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            
+            if result.returncode == 0 and os.path.exists(output_file):
+                with open(output_file, 'r') as f:
+                    output = f.read()
+                
+                # Add gene context if available
+                if '_gene_name' in kwargs:
+                    gene = kwargs['_gene_name']
+                    output = f"Gene {gene} - {tool_name.upper()}:\n\n{output}"
+                
+                # Cleanup
+                try:
+                    os.remove(input_file)
+                    os.remove(output_file)
+                except:
+                    pass
+                
+                return output
+            else:
+                # If no output file, return stdout/stderr
+                error_msg = result.stderr if result.stderr else "Tool execution failed"
+                return f"Error running {tool_name}: {error_msg}"
+        
+        except Exception as e:
+            return f"Error: Failed to run {tool_name}: {str(e)}"
 
 
 if __name__ == "__main__":
