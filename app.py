@@ -62,6 +62,10 @@ def initialize_tools():
 def main():
     """Main Streamlit application"""
     
+    # Initialize session state for sequence storage
+    if 'sequences' not in st.session_state:
+        st.session_state.sequences = {}
+    
     # Header
     col1, col2 = st.columns([1, 4])
     with col1:
@@ -120,9 +124,10 @@ def main():
         )
     
     # Main interface tabs
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "🤖 Natural Language Query",
         "🔧 Manual Tool Selection",
+        "🌐 Genome Browser Query",
         "📊 Sequence Analysis",
         "📚 Documentation"
     ])
@@ -165,7 +170,25 @@ def main():
                         # Run the tool
                         with st.spinner(f"Running {tool_name}..."):
                             try:
-                                analysis_result = emboss.run_tool(tool_name, **parameters)
+                                # Handle genome queries specially
+                                if tool_name == 'genome_query':
+                                    sequence = emboss.query_ucsc_genome(
+                                        parameters.get('genome', ''),
+                                        parameters.get('chrom', ''),
+                                        int(parameters.get('start', 0)),
+                                        int(parameters.get('end', 0))
+                                    )
+                                    analysis_result = sequence
+                                # Handle gene queries specially
+                                elif tool_name == 'gene_query':
+                                    gene_info = emboss.query_gene_info(
+                                        parameters.get('gene_name', ''),
+                                        parameters.get('genome', 'hg38'),
+                                        parameters.get('track', 'gencode')
+                                    )
+                                    analysis_result = gene_info
+                                else:
+                                    analysis_result = emboss.run_tool(tool_name, **parameters)
                                 
                                 st.markdown('<div class="success-box">', unsafe_allow_html=True)
                                 st.success("Analysis completed!")
@@ -269,8 +292,110 @@ def main():
                     result = emboss.find_restriction_sites(sequence, enzyme if enzyme else None)
                     st.code(result, language="text")
     
-    # TAB 3: Batch Sequence Analysis
+    # TAB 3: Genome Browser Query
     with tab3:
+        st.subheader("Query genome sequences via UCSC (no download needed)")
+        st.info("Stream genomic data directly from UCSC Genome Browser - no storage required!")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            genome = st.selectbox(
+                "Select genome assembly:",
+                ["hg38", "hg37", "mm10", "mm9", "dm6", "dm3", "ce10", "sacCer3"],
+                help="Human (hg), Mouse (mm), Fly (dm), Worm (ce), Yeast (sac)"
+            )
+            
+            chrom = st.text_input(
+                "Chromosome:",
+                value="chr1",
+                placeholder="e.g., chr1, chrX, chr2",
+                help="Include 'chr' prefix"
+            )
+        
+        with col2:
+            start_pos = st.number_input(
+                "Start position (0-based):",
+                value=1000000,
+                min_value=0,
+                step=1000,
+                help="Start of genomic region"
+            )
+            
+            end_pos = st.number_input(
+                "End position (0-based):",
+                value=1001000,
+                min_value=0,
+                step=1000,
+                help="End of genomic region"
+            )
+        
+        if st.button("🔍 Query UCSC", key="ucsc_btn"):
+            if start_pos >= end_pos:
+                st.error("Start position must be less than end position")
+            else:
+                region_size = end_pos - start_pos
+                if region_size > 1000000:
+                    st.warning(f"Large region ({region_size:,} bp). This may take a moment...")
+                
+                with st.spinner(f"Querying UCSC for {genome}:{chrom}:{start_pos}-{end_pos}..."):
+                    try:
+                        sequence = emboss.query_ucsc_genome(genome, chrom, int(start_pos), int(end_pos))
+                        
+                        if "Error" not in sequence:
+                            st.markdown('<div class="success-box">', unsafe_allow_html=True)
+                            st.success(f"Successfully retrieved {region_size:,} bp")
+                            st.code(sequence, language="text")
+                            
+                            # Store in session for later use
+                            st.session_state.last_sequence = sequence
+                            
+                            # Option to analyze
+                            st.subheader("Quick Analysis")
+                            col1, col2, col3 = st.columns(3)
+                            
+                            with col1:
+                                if st.button("📊 Get Info", key="ucsc_info"):
+                                    info = emboss.get_sequence_info(sequence.split('\\n', 1)[1])
+                                    st.code(info, language="text")
+                            
+                            with col2:
+                                if st.button("🧬 GC Content", key="ucsc_gc"):
+                                    gc = emboss.calculate_gc_content(sequence.split('\\n', 1)[1])
+                                    st.code(gc, language="text")
+                            
+                            with col3:
+                                if st.button("📥 Download", key="ucsc_down"):
+                                    st.download_button(
+                                        label="Download FASTA",
+                                        data=sequence,
+                                        file_name=f"{genome}_{chrom}_{start_pos}_{end_pos}.fasta",
+                                        mime="text/plain"
+                                    )
+                            
+                            st.markdown('</div>', unsafe_allow_html=True)
+                        else:
+                            st.markdown('<div class="error-box">', unsafe_allow_html=True)
+                            st.error(sequence)
+                            st.markdown('</div>', unsafe_allow_html=True)
+                    
+                    except Exception as e:
+                        st.markdown('<div class="error-box">', unsafe_allow_html=True)
+                        st.error(f"Error querying UCSC: {str(e)}")
+                        st.markdown('</div>', unsafe_allow_html=True)
+        
+        st.markdown("---")
+        st.subheader("Available Genomes")
+        st.write("""
+        - **hg38** / **hg37**: Human genome (GRCh38 / GRCh37)
+        - **mm10** / **mm9**: Mouse genome (GRCm38 / GRCm37)
+        - **dm6** / **dm3**: Drosophila (fruit fly)
+        - **ce10**: Caenorhabditis elegans (nematode)
+        - **sacCer3**: Saccharomyces cerevisiae (yeast)
+        """)
+    
+    # TAB 4: Batch Sequence Analysis
+    with tab4:
         st.subheader("Analyze multiple sequences")
         
         st.info("Upload a FASTA file to analyze multiple sequences at once")
@@ -284,8 +409,8 @@ def main():
             content = uploaded_file.read().decode('utf-8')
             st.text_area("File content:", content, height=200)
     
-    # TAB 4: Documentation
-    with tab4:
+    # TAB 5: Documentation
+    with tab5:
         st.subheader("How to use BioQuery Local")
         
         st.markdown("""

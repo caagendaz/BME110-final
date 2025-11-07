@@ -8,6 +8,8 @@ import tempfile
 import os
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+from Bio import Entrez
+import requests
 
 
 class EMBOSSWrapper:
@@ -15,6 +17,9 @@ class EMBOSSWrapper:
     
     def __init__(self):
         """Initialize the EMBOSS wrapper and verify installation"""
+        # Set NCBI Entrez email for downloads
+        Entrez.email = "user@bioquery.local"
+        
         # Map natural language to EMBOSS commands
         self.tool_map = {
             'translate': 'transeq',
@@ -29,7 +34,10 @@ class EMBOSSWrapper:
             'palindrome': 'palindrome',
             'fuzzy': 'fuzzpro',
             'dotplot': 'dotmatcher',
-            'consensus': 'cons'
+            'consensus': 'cons',
+            'gc': 'gc_content',
+            'download': 'download_sequence',
+            'geecee': 'gc_content'
         }
         
         # Tool descriptions for user guidance
@@ -46,7 +54,9 @@ class EMBOSSWrapper:
             'palindrome': 'Find palindromic sequences',
             'fuzzy': 'Fuzzy pattern matching',
             'dotplot': 'Create dot plots between sequences',
-            'consensus': 'Generate consensus sequence'
+            'consensus': 'Generate consensus sequence',
+            'gc': 'Calculate GC content of a sequence',
+            'download': 'Download sequence from NCBI database'
         }
         
         # Verify EMBOSS installation
@@ -349,6 +359,249 @@ class EMBOSSWrapper:
         except Exception as e:
             return f"Error during six frame translation: {str(e)}"
     
+    def calculate_gc_content(self, sequence: str) -> str:
+        """Calculate GC content of a sequence
+        
+        Args:
+            sequence: DNA sequence string
+        
+        Returns:
+            str: GC content percentage and analysis
+        """
+        try:
+            # Remove non-nucleotide characters
+            clean_seq = ''.join(c.upper() for c in sequence if c in 'ATGCN')
+            
+            if len(clean_seq) == 0:
+                return "Error: No valid nucleotides found in sequence"
+            
+            gc_count = clean_seq.count('G') + clean_seq.count('C')
+            gc_percent = (gc_count / len(clean_seq)) * 100
+            at_count = clean_seq.count('A') + clean_seq.count('T')
+            at_percent = (at_count / len(clean_seq)) * 100
+            
+            result = f"""GC Content Analysis
+=====================
+Sequence Length: {len(clean_seq)} bp
+GC Count: {gc_count}
+GC Percentage: {gc_percent:.2f}%
+AT Count: {at_count}
+AT Percentage: {at_percent:.2f}%
+
+Interpretation:
+- Typical bacterial GC content: 30-70%
+- Typical human GC content: ~40%
+- GC content affects DNA stability and PCR
+"""
+            return result
+        
+        except Exception as e:
+            return f"Error calculating GC content: {str(e)}"
+    
+    def download_sequence_from_ncbi(self, accession: str, start: int = None, end: int = None, db: str = 'nucleotide') -> str:
+        """Download sequence region from NCBI using accession number and optional coordinates
+        
+        Args:
+            accession: NCBI accession number (e.g., 'NC_000001' for human chr1, 'NM_001234' for mRNA)
+            start: Start position (optional, if not specified gets full sequence)
+            end: End position (optional, if not specified gets full sequence)
+            db: Database to search ('nucleotide' or 'protein')
+        
+        Returns:
+            str: FASTA sequence or error message
+        
+        Examples:
+            - download_sequence_from_ncbi('NC_000001', start=1000, end=2000) -> 1000 bp region
+            - download_sequence_from_ncbi('NM_001234') -> full mRNA sequence
+        """
+        try:
+            # Fetch sequence with optional range
+            if start and end:
+                handle = Entrez.efetch(
+                    db=db, 
+                    id=accession, 
+                    rettype="fasta", 
+                    retmode="text",
+                    seq_start=start,
+                    seq_stop=end
+                )
+            else:
+                handle = Entrez.efetch(
+                    db=db, 
+                    id=accession, 
+                    rettype="fasta", 
+                    retmode="text"
+                )
+            
+            record = handle.read()
+            handle.close()
+            
+            if record:
+                if start and end:
+                    return f"Successfully downloaded {accession} region {start}-{end}:\n\n{record}"
+                else:
+                    return f"Successfully downloaded {accession}:\n\n{record}"
+            else:
+                return f"No sequence found for accession: {accession}"
+        
+        except Exception as e:
+            return f"Error downloading from NCBI: {str(e)}. Make sure accession number is valid."
+    
+    def query_ucsc_genome(self, genome: str, chrom: str, start: int, end: int) -> str:
+        """Query UCSC Genome Browser API for sequence data (no storage needed)
+        
+        Args:
+            genome: Genome assembly (e.g., 'hg38' for human, 'mm10' for mouse, 'dm6' for fly)
+            chrom: Chromosome (e.g., 'chr1', 'chr2', 'chrX')
+            start: Start position (0-based)
+            end: End position (0-based, exclusive)
+        
+        Returns:
+            str: FASTA sequence or error message
+        
+        Examples:
+            - query_ucsc_genome('hg38', 'chr1', 1000, 2000) -> 1000 bp from human chr1
+            - query_ucsc_genome('mm10', 'chrX', 50000, 51000) -> 1000 bp from mouse chrX
+        
+        Available genomes: hg38, hg37, mm10, mm9, dm6, dm3, ce10, sacCer3
+        """
+        try:
+            # UCSC DAS server endpoint (no authentication needed, no storage)
+            base_url = "https://genome.ucsc.edu/cgi-bin/das"
+            
+            # Format: /database/dna?segment=chrom:start,end
+            url = f"{base_url}/{genome}/dna?segment={chrom}:{start},{end}"
+            
+            response = requests.get(url, timeout=30)
+            response.raise_for_status()
+            
+            # Parse DAS XML response
+            if response.status_code == 200:
+                # Extract sequence from DAS format
+                import xml.etree.ElementTree as ET
+                root = ET.fromstring(response.text)
+                
+                # Find sequence in XML
+                for dna_elem in root.findall('.//{http://www.biodas.org/xmlns/das}DNA'):
+                    seq_text = dna_elem.text
+                    if seq_text:
+                        # Clean whitespace
+                        sequence = ''.join(seq_text.split())
+                        
+                        region_info = f"{genome}:{chrom}:{start}-{end}"
+                        return f">UCSC_{region_info}\\n{sequence}"
+                
+                return f"No sequence data returned for {genome}:{chrom}:{start}-{end}"
+            else:
+                return f"Error: UCSC API returned status {response.status_code}"
+        
+        except requests.exceptions.Timeout:
+            return "Error: UCSC API request timed out. Try smaller region."
+        except Exception as e:
+            return f"Error querying UCSC: {str(e)}. Check genome/chromosome names."
+    
+    def query_gene_info(self, gene_name: str, genome: str = 'hg38', track: str = 'gencode') -> str:
+        """Query gene information from Ensembl BioMart
+        
+        Args:
+            gene_name: Gene symbol (e.g., 'ALKBH1', 'TP53', 'BRCA1')
+            genome: Genome assembly ('hg38', 'hg37', 'mm10', etc.)
+            track: Track/database ('gencode', 'ensembl', 'refseq')
+        
+        Returns:
+            str: Gene information including exons, CDS, transcript length
+        
+        Examples:
+            - query_gene_info('ALKBH1') -> Full gene annotation
+            - query_gene_info('TP53', genome='hg38') -> TP53 with all transcripts
+        """
+        try:
+            # Use Ensembl REST API to get gene information
+            # First, get the gene ID from gene symbol
+            base_url = "https://rest.ensembl.org"
+            
+            # Search for gene by symbol
+            search_url = f"{base_url}/xrefs/symbol/homo_sapiens/{gene_name}?external_db=HGNC"
+            headers = {"Content-Type": "application/json"}
+            
+            response = requests.get(search_url, headers=headers, timeout=30)
+            response.raise_for_status()
+            
+            gene_data = response.json()
+            
+            if not gene_data or len(gene_data) == 0:
+                return f"Gene '{gene_name}' not found in Ensembl. Try HGNC symbol (e.g., ALKBH1)"
+            
+            # Get the Ensembl gene ID (stable ID)
+            gene_id = gene_data[0].get('id')
+            
+            if not gene_id:
+                return f"Could not find Ensembl gene ID for {gene_name}"
+            
+            # Now get detailed information about the gene
+            gene_url = f"{base_url}/lookup/id/{gene_id}?expand=1"
+            gene_response = requests.get(gene_url, headers=headers, timeout=30)
+            gene_response.raise_for_status()
+            
+            gene_info = gene_response.json()
+            
+            result = f"Gene Information: {gene_name}\n"
+            result += "=" * 70 + "\n"
+            result += f"Ensembl Gene ID: {gene_id}\n"
+            result += f"Description: {gene_info.get('description', 'N/A')}\n"
+            result += f"Biotype: {gene_info.get('biotype', 'N/A')}\n"
+            result += f"Location: {gene_info.get('seq_region_name')}:{gene_info.get('start')}-{gene_info.get('end')} ({gene_info.get('strand', '?')})\n"
+            result += "\n"
+            
+            # Process transcripts
+            transcripts = gene_info.get('Transcript', [])
+            result += f"Total Transcripts: {len(transcripts)}\n\n"
+            
+            if transcripts:
+                for i, transcript in enumerate(transcripts, 1):
+                    tx_id = transcript.get('id', 'N/A')
+                    tx_biotype = transcript.get('biotype', 'N/A')
+                    
+                    # Get exons
+                    exons = transcript.get('Exon', [])
+                    exon_count = len(exons)
+                    
+                    # Calculate lengths
+                    tx_start = transcript.get('start', 0)
+                    tx_end = transcript.get('end', 0)
+                    tx_length = tx_end - tx_start + 1  # Inclusive
+                    
+                    # CDS coordinates
+                    cds_start = transcript.get('Translation', {}).get('start', tx_start) if transcript.get('Translation') else tx_start
+                    cds_end = transcript.get('Translation', {}).get('end', tx_end) if transcript.get('Translation') else tx_end
+                    cds_length = cds_end - cds_start + 1 if (cds_start and cds_end) else 0
+                    
+                    result += f"Transcript {i}: {tx_id}\n"
+                    result += f"  Biotype: {tx_biotype}\n"
+                    result += f"  Position: {transcript.get('seq_region_name')}:{tx_start}-{tx_end}\n"
+                    result += f"  Number of exons: {exon_count}\n"
+                    result += f"  Full transcript length (with UTRs): {tx_length:,} bp\n"
+                    result += f"  CDS (coding region) length: {cds_length:,} bp\n"
+                    
+                    if exons:
+                        result += f"  Exon coordinates:\n"
+                        for j, exon in enumerate(exons, 1):
+                            ex_start = exon.get('start')
+                            ex_end = exon.get('end')
+                            ex_length = ex_end - ex_start + 1
+                            result += f"    Exon {j}: {ex_start:,}-{ex_end:,} ({ex_length:,} bp)\n"
+                    
+                    result += "\n"
+            
+            return result
+        
+        except requests.exceptions.Timeout:
+            return f"Error: Ensembl API request timed out searching for {gene_name}"
+        except requests.exceptions.ConnectionError:
+            return f"Error: Could not connect to Ensembl. Check internet connection."
+        except Exception as e:
+            return f"Error querying gene info from Ensembl: {str(e)}\nExample: query_gene_info('ALKBH1')"
+    
     def run_tool(self, tool_name: str, **kwargs) -> str:
         """Generic method to run any EMBOSS tool
         
@@ -377,6 +630,25 @@ class EMBOSSWrapper:
             return self.align_sequences(kwargs.get('seq1', ''), kwargs.get('seq2', ''))
         elif emboss_name == 'sixpack':
             return self.get_six_frame_translation(kwargs.get('sequence', ''))
+        elif emboss_name == 'gc_content':
+            return self.calculate_gc_content(kwargs.get('sequence', ''))
+        elif emboss_name == 'download_sequence':
+            # Check if using UCSC API (genome-based)
+            if 'genome' in kwargs:
+                return self.query_ucsc_genome(
+                    kwargs.get('genome', ''),
+                    kwargs.get('chrom', ''),
+                    kwargs.get('start', 0),
+                    kwargs.get('end', 0)
+                )
+            else:
+                # Fall back to NCBI
+                return self.download_sequence_from_ncbi(
+                    kwargs.get('accession', ''),
+                    kwargs.get('start', None),
+                    kwargs.get('end', None),
+                    kwargs.get('db', 'nucleotide')
+                )
         else:
             return f"Tool '{tool_name}' not yet implemented"
 

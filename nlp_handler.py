@@ -24,14 +24,14 @@ class NLPHandler:
         self.client = Client(host=ollama_host)
         
         # Define the system prompt for the LLM
-        self.system_prompt = """You are a bioinformatics assistant that helps users run EMBOSS analysis tools.
+        self.system_prompt = """You are a bioinformatics assistant that helps users run EMBOSS analysis tools and query genomic databases.
 
-When a user asks a question about DNA/protein sequences, respond with a JSON object containing:
-1. "tool": the EMBOSS tool name (translate, reverse, orf, align, pattern, restriction, shuffle, info, sixframe)
+When a user asks a question about DNA/protein sequences, genomic regions, or genes, respond with a JSON object containing:
+1. "tool": the tool name (EMBOSS tool, 'genome_query', or 'gene_query')
 2. "parameters": a dict with required parameters
 3. "explanation": a brief explanation of what will be done
 
-Available tools:
+EMBOSS tools:
 - translate: Translate DNA to protein. Needs "sequence" and optional "frame" (1-3)
 - reverse: Reverse complement DNA. Needs "sequence"
 - orf: Find open reading frames. Needs "sequence" and optional "min_size"
@@ -41,6 +41,18 @@ Available tools:
 - shuffle: Shuffle sequence. Needs "sequence"
 - info: Get sequence info. Needs "sequence"
 - sixframe: Show all 6 reading frames. Needs "sequence"
+- gc: Calculate GC content. Needs "sequence"
+
+GENOME QUERY tool:
+- genome_query: Query UCSC Genome Browser for genomic regions. Needs "genome", "chrom", "start", "end"
+
+GENE QUERY tool:
+- gene_query: Look up gene information (exons, CDS, transcript length). Needs "gene_name" and optional "genome" (default hg38) and "track" (default gencode)
+
+Decision logic:
+- If user mentions: gene name, exons, CDS, transcript, GENCODE, RefSeq, coding region -> use gene_query
+- If user mentions: chromosome, genomic position, region, coordinates -> use genome_query
+- If user mentions: sequence analysis, translation, alignment, ORF -> use EMBOSS tool
 
 Always respond with ONLY valid JSON, no other text. Start with { and end with }"""
 
