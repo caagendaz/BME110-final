@@ -818,10 +818,11 @@ Keep it conversational and friendly."""
         - Specific hardcoded implementations for common tools (transeq, revseq, etc.)
         - Generic fallback for any other EMBOSS tool (iep, charge, etc.)
         - Gene-based access: any tool can accept gene_name and auto-resolve to sequence
+        - Transcript variant selection: specify which transcript variant to use
         
         Args:
             tool_name: Name of the tool to run (natural language or EMBOSS name)
-            **kwargs: Tool-specific parameters (can include 'gene_name' or 'sequence')
+            **kwargs: Tool-specific parameters (can include 'gene_name', 'sequence', 'transcript_variant')
         
         Returns:
             str: Tool output or error message
@@ -832,17 +833,69 @@ Keep it conversational and friendly."""
         # If a gene_name is provided but no sequence, try to resolve the sequence first
         if ('gene_name' in kwargs or 'gene' in kwargs) and 'sequence' not in kwargs:
             gene = kwargs.get('gene_name') or kwargs.get('gene')
-            seq = self._resolve_sequence_from_gene(gene)
-            if seq:
-                kwargs['sequence'] = seq
-                # Also keep gene name for context in output
-                kwargs['_gene_name'] = gene
+            transcript_variant = kwargs.get('transcript_variant', None)
+            
+            # If a specific transcript variant is requested, fetch that one
+            if transcript_variant:
+                # Extract variant number from "transcript variant N"
+                import re
+                match = re.search(r'variant\s+(\d+)', transcript_variant.lower())
+                if match:
+                    variant_num = int(match.group(1))
+                    # Query gene info and get specific transcript
+                    gene_info = self.query_gene_info(gene)
+                    if gene_info and not gene_info.startswith('Error'):
+                        # Extract transcript from the numbered position
+                        lines = gene_info.split('\n')
+                        transcript_id = None
+                        for i, line in enumerate(lines):
+                            # Check if this line has "Transcript N: ENSTNNN..."
+                            if f'Transcript {variant_num}:' in line:
+                                # The transcript ID might be on this line
+                                parts = line.split()
+                                for part in parts:
+                                    if part.startswith('ENST'):
+                                        transcript_id = part
+                                        break
+                                break
+                        
+                        if transcript_id:
+                            seq = self.get_transcript_sequence(transcript_id, seq_type='cds')
+                            if seq and not seq.startswith('Error'):
+                                kwargs['sequence'] = seq
+                                kwargs['_gene_name'] = gene
+                                kwargs['_transcript_variant'] = transcript_variant
+                            else:
+                                return f"Could not fetch sequence for {gene} {transcript_variant}"
+                        else:
+                            return f"Could not find {transcript_variant} in {gene} gene info"
             else:
-                return f"Could not resolve sequence for gene: {gene}"
+                # No specific variant requested, use best transcript
+                seq = self._resolve_sequence_from_gene(gene)
+                if seq:
+                    kwargs['sequence'] = seq
+                    # Also keep gene name for context in output
+                    kwargs['_gene_name'] = gene
+                else:
+                    return f"Could not resolve sequence for gene: {gene}"
         
         # Route to specific hardcoded methods (optimized implementations)
         if emboss_name == 'transeq':
-            return self.translate_sequence(kwargs.get('sequence', ''), kwargs.get('frame', 1))
+            result = self.translate_sequence(kwargs.get('sequence', ''), kwargs.get('frame', 1))
+            # Add gene/transcript context if available
+            if '_gene_name' in kwargs:
+                gene = kwargs['_gene_name']
+                variant_info = f" from {kwargs['_transcript_variant']}" if '_transcript_variant' in kwargs else ""
+                result = f"Translation of {gene}{variant_info}:\n\n{result}"
+                # Count amino acids
+                lines = result.split('\n')
+                aa_count = len([c for c in result if c.isalpha() and c.islower()])
+                if aa_count == 0:
+                    for line in lines:
+                        if line and not line.startswith('>'):
+                            aa_count += len([c for c in line if c.isalpha()])
+                            break
+            return result
         elif emboss_name == 'revseq':
             return self.reverse_complement(kwargs.get('sequence', ''))
         elif emboss_name == 'getorf':

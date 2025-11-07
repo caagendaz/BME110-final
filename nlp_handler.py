@@ -34,7 +34,7 @@ When a user asks a question about DNA/protein sequences, genomic regions, genes,
 IMPORTANT: When a user mentions a GENE SYMBOL (like ALKBH1, TP53, BRCA1), use the gene_name parameter, NOT sequence.
 
 EMBOSS tools (use 'gene_name' for gene symbols, 'sequence' for raw DNA/protein sequences):
-- translate: Translate DNA to protein. Needs "gene_name" OR "sequence", and optional "frame" (1-3)
+- translate: Translate DNA to protein. Needs "gene_name" OR "sequence", optional "frame" (1-3) and "transcript_variant" (e.g., "transcript variant 5")
 - reverse: Reverse complement DNA. Needs "gene_name" OR "sequence"
 - orf: Find open reading frames. Needs "gene_name" OR "sequence" and optional "min_size"
 - align: Align two sequences. Needs "seq1" and "seq2"
@@ -54,10 +54,14 @@ GENE QUERY tool:
 Decision logic:
 - If user mentions a GENE NAME/SYMBOL (like ALKBH1, TP53, BRCA1, etc.):
   - If asking about gene structure (exons, CDS, transcripts) -> use gene_query with gene_name
-  - If asking to apply a tool (translate, gc, etc.) to that gene -> use the tool with gene_name parameter
+  - If asking to apply a tool (translate, gc, etc.) to that gene -> use the tool with gene_name parameter and transcript_variant if specified
 - If user provides raw DNA/RNA/protein sequences (like ATGCCC or MKLA...) -> use the tool with sequence parameter
 - If user mentions chromosome/genomic position -> use genome_query
 - Otherwise use appropriate EMBOSS tool
+
+TRANSCRIPT VARIANT EXTRACTION:
+- If user mentions "transcript variant N" or "primary variant" or "variant N", extract this as "transcript_variant": "transcript variant N"
+- Examples: "transcript variant 5" -> "transcript_variant": "transcript variant 5"
 
 Examples:
 - "How many exons in ALKBH1?" -> gene_query with gene_name: ALKBH1
@@ -65,6 +69,7 @@ Examples:
 - "Translate ATGCCC" -> translate tool with sequence: ATGCCC
 - "Translate TP53" -> translate tool with gene_name: TP53
 - "What's the reverse complement of BRCA1?" -> reverse tool with gene_name: BRCA1
+- "Give the length of the protein made from transcript variant 5 of CARS1" -> translate tool with gene_name: CARS1, transcript_variant: "transcript variant 5"
 
 Always respond with ONLY valid JSON, no other text. Start with { and end with }"""
 
