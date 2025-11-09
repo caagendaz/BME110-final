@@ -263,7 +263,6 @@ mindmap
 ```mermaid
 graph TB
     subgraph Code["Source Code"]
-        direction TB
         APP["app.py<br/>Streamlit web interface"]
         NLP["nlp_handler.py<br/>Ollama NLP integration"]
         EMBOSS["emboss_wrapper.py<br/>EMBOSS tool wrapper"]
@@ -282,7 +281,7 @@ graph TB
         SETUP_PS["setup_windows.ps1<br/>Windows setup"]
     end
     
-    APP -->|HTTP requests| Ollama[("Ollama<br/>gemma3:4b")]
+    NLP -->|HTTP requests| Ollama[("Ollama<br/>gemma3:4b")]
     EMBOSS -->|subprocess| Tools[("EMBOSS<br/>Tools")]
     EMBOSS -->|HTTP requests| Ensembl[("Ensembl<br/>API")]
     
