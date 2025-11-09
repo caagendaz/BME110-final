@@ -833,59 +833,58 @@ Keep it conversational and friendly."""
             str: Formatted BLAST results with hits, E-values, and identity percentages
         """
         try:
-            from Bio.Blast import NCBIXML
-            from Bio import Entrez
-            
-            # Set Entrez email (required by NCBI)
-            Entrez.email = "user@bioquery.local"
+            from Bio.Blast import NCBIXML, NCBIWWW
             
             print(f"Submitting {blast_type} search to NCBI (this may take 10-30 seconds)...")
             
-            # Submit BLAST query
-            result_handle = Entrez.qblast(blast_type, database, sequence, 
-                                         hitlist_size=max_results, 
-                                         expect=expect_threshold,
-                                         format_type="XML")
+            # Submit BLAST query using NCBIWWW (web interface)
+            result_handle = NCBIWWW.qblast(blast_type, database, sequence, 
+                                          hitlist_size=max_results, 
+                                          expect=expect_threshold,
+                                          format_type="XML")
             
             # Parse results
-            blast_records = NCBIXML.parse(result_handle)
+            blast_records = list(NCBIXML.parse(result_handle))
             
             output = []
             output.append(f"BLAST {blast_type.upper()} Results")
             output.append("=" * 60)
             
-            result_count = 0
-            for record in blast_records:
-                result_count += 1
-                output.append(f"\nQuery: {record.query}")
-                output.append(f"Query Length: {record.query_length} bp")
-                output.append(f"Number of Alignments: {len(record.alignments)}")
-                output.append("-" * 60)
-                
-                if len(record.alignments) == 0:
-                    output.append("No matches found")
-                    continue
-                
+            if len(blast_records) == 0:
+                output.append("No results returned from BLAST search")
+                return "\n".join(output)
+            
+            record = blast_records[0]
+            output.append(f"\nQuery: {record.query[:50]}...")
+            output.append(f"Query Length: {record.query_length} bp")
+            output.append(f"Number of Alignments: {len(record.alignments)}")
+            output.append("-" * 60)
+            
+            if len(record.alignments) == 0:
+                output.append("No matches found")
+            else:
+                # Show only top N results
                 for alignment_idx, alignment in enumerate(record.alignments[:max_results], 1):
                     output.append(f"\nHit {alignment_idx}: {alignment.title}")
                     output.append(f"  Accession: {alignment.accession}")
                     output.append(f"  Length: {alignment.length} bp")
                     
-                    for hsp_idx, hsp in enumerate(alignment.hsps[:3], 1):  # Top 3 HSPs per hit
-                        output.append(f"    HSP {hsp_idx}:")
-                        output.append(f"      E-value: {hsp.expect:.2e}")
-                        output.append(f"      Score: {hsp.score} bits")
-                        output.append(f"      Identity: {hsp.identities}/{hsp.align_length} ({100*hsp.identities//hsp.align_length}%)")
-                        output.append(f"      Query: {hsp.query[:60]}...")
-                        output.append(f"      Sbjct: {hsp.sbjct[:60]}...")
-            
-            if result_count == 0:
-                output.append("No results returned from BLAST search")
+                    # Show top HSP (High-Scoring Pair)
+                    if alignment.hsps:
+                        hsp = alignment.hsps[0]
+                        output.append(f"  E-value: {hsp.expect:.2e}")
+                        output.append(f"  Score: {hsp.score} bits")
+                        identity_pct = 100 * hsp.identities // hsp.align_length if hsp.align_length > 0 else 0
+                        output.append(f"  Identity: {hsp.identities}/{hsp.align_length} ({identity_pct}%)")
+                        output.append(f"  Query alignment: {hsp.query[:70]}")
+                        output.append(f"  Subject alignment: {hsp.sbjct[:70]}")
             
             return "\n".join(output)
             
         except Exception as e:
-            return f"BLAST search failed: {str(e)}\n\nMake sure you have an internet connection and the sequence format is correct."
+            import traceback
+            error_detail = traceback.format_exc()
+            return f"BLAST search failed: {str(e)}\n\nDetails: {error_detail}\n\nMake sure you have an internet connection and BioPython is properly installed."
 
     def run_tool(self, tool_name: str, **kwargs) -> str:
         """Generic method to run any EMBOSS tool or BLAST
