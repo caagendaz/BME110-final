@@ -38,6 +38,12 @@ FOR MULTI-STEP OPERATIONS (when user says "then", "and then", "after that", "nex
 2. "explanation": overall explanation of the workflow
 3. "use_previous_result": whether step N+1 should use output from step N
 
+IMPORTANT MULTI-STEP CHAINING RULES:
+- If Step 1 is gene_query and Step 2 is BLAST: DO NOT include "sequence" parameter in Step 2. The system will automatically fetch the sequence from the gene.
+- If Step 1 is gene_query and Step 2 is translate/gc/analysis: DO NOT include "sequence" parameter in Step 2. The system will use the gene's sequence.
+- Only provide "sequence" parameter if user explicitly gives you a raw sequence.
+- For gene_name chaining: Just pass the gene_name in Step 1, and the gene_name (not sequence) in dependent steps - the system will resolve it.
+
 IMPORTANT: When a user mentions a GENE SYMBOL (like ALKBH1, TP53, BRCA1), use the gene_name parameter, NOT sequence.
 
 EMBOSS tools (use 'gene_name' for gene symbols, 'sequence' for raw DNA/protein sequences):
@@ -96,9 +102,10 @@ Examples:
 - "Give the length of the protein made from transcript variant 5 of CARS1" -> translate tool with gene_name: CARS1, transcript_variant: "transcript variant 5"
 - "Find gene info for ALKBH1, then calculate its GC content" -> multi-step with gene_query followed by gc
 - "BLAST this sequence against the human genome: ATGCGATCG" -> blast tool with sequence: ATGCGATCG, blast_type: blastn
-- "Find BRCA1 sequence, then BLAST it to find homologous genes" -> multi-step: gene_query for BRCA1, then blast with gene_name: BRCA1 (auto-resolved to sequence)
+- "Find BRCA1 sequence, then BLAST it to find homologous genes" -> multi-step: gene_query for BRCA1 (NO sequence param in step 2), then blast (NO sequence param - system auto-fetches)
 - "Search for similar proteins to MKLASELKD" -> blastp tool with sequence: MKLASELKD
 - "Find homologous DNA sequences to this: ATGCCC" -> blastn tool with sequence: ATGCCC
+- "Find TP53 gene info then translate it" -> multi-step: gene_query(gene_name: TP53), translate(gene_name: TP53, NOT sequence)
 
 Always respond with ONLY valid JSON, no other text. Start with { and end with }"""
 
@@ -138,9 +145,12 @@ Always respond with ONLY valid JSON, no other text. Start with { and end with }"
             
             # Validate the response - can be either single tool or multi-step
             if 'steps' in result:
-                # Multi-step query
+                # Multi-step query - clean up parameters
                 if not isinstance(result['steps'], list) or len(result['steps']) == 0:
                     return False, {"error": "Invalid steps format"}
+                
+                # Smart parameter cleanup for multi-step workflows
+                result['steps'] = self._cleanup_multistep_parameters(result['steps'])
                 return True, result
             elif 'tool' in result and 'parameters' in result:
                 # Single-step query
@@ -152,6 +162,46 @@ Always respond with ONLY valid JSON, no other text. Start with { and end with }"
             return False, {"error": f"Failed to parse LLM response as JSON: {str(e)}"}
         except Exception as e:
             return False, {"error": f"Error processing query: {str(e)}"}
+    
+    def _cleanup_multistep_parameters(self, steps: list) -> list:
+        """Clean up parameters in multi-step queries to enable proper chaining
+        
+        Rules:
+        - If previous step is gene_query and current step is BLAST/translate/gc, remove 'sequence' param
+        - This allows the system to automatically fetch sequences and chain them
+        
+        Args:
+            steps: List of step dicts
+        
+        Returns:
+            List of cleaned step dicts
+        """
+        cleaned_steps = []
+        
+        for idx, step in enumerate(steps):
+            step_copy = step.copy()
+            tool_name = step_copy.get('tool', '').lower()
+            parameters = step_copy.get('parameters', {}).copy()
+            
+            # Check if previous step was gene_query
+            if idx > 0:
+                prev_step = steps[idx - 1]
+                prev_tool = prev_step.get('tool', '').lower()
+                
+                # If previous was gene_query and current is a dependent tool
+                if prev_tool == 'gene_query' and tool_name in ['blast', 'blastn', 'blastp', 'blastx', 'search', 'translate', 'gc', 'gc_content', 'reverse', 'orf', 'getorf']:
+                    # Remove 'sequence' if it's just a gene name (not actual bases)
+                    if 'sequence' in parameters:
+                        seq_value = parameters['sequence']
+                        # If sequence is short and all letters (like 'ALKBH1'), it's a gene name - remove it
+                        if isinstance(seq_value, str) and len(seq_value) < 20 and seq_value.replace('_', '').isalpha():
+                            del parameters['sequence']
+                            print(f"  [Cleanup] Removed sequence='{seq_value}' from {tool_name} - will auto-chain from gene_query")
+            
+            step_copy['parameters'] = parameters
+            cleaned_steps.append(step_copy)
+        
+        return cleaned_steps
     
     def suggest_tools(self, query: str) -> list:
         """Suggest relevant EMBOSS tools based on a query
