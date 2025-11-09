@@ -823,7 +823,7 @@ Keep it conversational and friendly."""
         """Run BLAST search against NCBI databases using remote Entrez service
         
         Args:
-            sequence: Query sequence (DNA, RNA, or protein)
+            sequence: Query sequence (DNA, RNA, or protein) or gene name to resolve
             blast_type: 'blastn' (DNA), 'blastp' (protein), 'blastx' (DNA->protein)
             database: NCBI database ('nt' for nucleotide, 'nr' for protein, etc.)
             max_results: Maximum number of results to return
@@ -835,7 +835,22 @@ Keep it conversational and friendly."""
         try:
             from Bio.Blast import NCBIXML, NCBIWWW
             
+            # Check if sequence is a gene name (short, all letters) - if so, resolve it
+            if sequence and len(sequence) < 20 and sequence.isalpha() and sequence.isupper():
+                print(f"Resolving gene {sequence} to sequence...")
+                gene_info = self.query_gene_info(sequence)
+                if gene_info and not gene_info.startswith('Error'):
+                    # Extract sequence from gene info (it's in FASTA format)
+                    lines = gene_info.split('\n')
+                    seq_lines = [l.strip() for l in lines if l.strip() and not l.startswith('>')]
+                    sequence = ''.join(seq_lines)
+                    if not sequence:
+                        return f"Error: Could not extract sequence from gene {sequence}"
+                else:
+                    return f"Error: Could not resolve gene {sequence}: {gene_info}"
+            
             print(f"Submitting {blast_type} search to NCBI (this may take 10-30 seconds)...")
+            print(f"Query sequence length: {len(sequence)} bp")
             
             # Submit BLAST query using NCBIWWW (web interface)
             result_handle = NCBIWWW.qblast(blast_type, database, sequence, 
