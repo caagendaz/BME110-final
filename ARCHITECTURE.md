@@ -3,10 +3,8 @@
 ## System Architecture Overview
 
 ```mermaid
-graph TB
-    subgraph User["User Interface"]
-        UI["Streamlit Web App<br/>http://localhost:8501"]
-    end
+graph TD
+    UI["🌐 Streamlit Web App<br/>http://localhost:8501"]
     
     subgraph Frontend["Frontend Layer"]
         NLP["NLP Handler<br/>(nlp_handler.py)<br/>Ollama gemma3:4b"]
@@ -26,9 +24,8 @@ graph TB
         NCBI["NCBI Entrez<br/>Sequence Download"]
     end
     
-    User -->|Natural Language Query| UI
-    UI -->|Tab 1: NLP Query| NLP
-    UI -->|Tab 2: Manual Input| ManualTool
+    UI -->|Natural Language Query| NLP
+    UI -->|Manual Input| ManualTool
     
     NLP -->|Parse Query| Wrapper
     ManualTool -->|Tool + Params| Wrapper
@@ -45,14 +42,17 @@ graph TB
     Wrapper -->|Download Sequence?| NCBI
     
     Wrapper -->|Results| UI
-    UI -->|Display| User
     
-    style User fill:#e1f5ff
-    style NLP fill:#fff3e0
-    style Wrapper fill:#f3e5f5
-    style GeneResolver fill:#e8f5e9
-    style Ensembl fill:#ffe0b2
-    style UCSC fill:#ffccbc
+    style UI fill:#1e88e5,stroke:#0d47a1,color:#ffffff,font-weight:bold
+    style NLP fill:#ff6f00,stroke:#e65100,color:#ffffff,font-weight:bold
+    style ManualTool fill:#7b1fa2,stroke:#4a148c,color:#ffffff,font-weight:bold
+    style Wrapper fill:#388e3c,stroke:#1b5e20,color:#ffffff,font-weight:bold
+    style GeneResolver fill:#0097a7,stroke:#006064,color:#ffffff,font-weight:bold
+    style TranscriptFetcher fill:#00838f,stroke:#004d40,color:#ffffff,font-weight:bold
+    style ToolExecutor fill:#00796b,stroke:#004d40,color:#ffffff,font-weight:bold
+    style Ensembl fill:#d32f2f,stroke:#b71c1c,color:#ffffff,font-weight:bold
+    style UCSC fill:#f57c00,stroke:#e65100,color:#ffffff,font-weight:bold
+    style NCBI fill:#fbc02d,stroke:#f57f17,color:#000000,font-weight:bold
 ```
 
 ## Natural Language Query Flow
@@ -75,11 +75,15 @@ graph LR
     
     H -->|Pass to EMBOSS Wrapper| I["Execute Operation"]
     
-    style A fill:#e3f2fd
-    style B fill:#fff9c4
-    style C fill:#ffe0b2
-    style H fill:#c8e6c9
-    style I fill:#f8bbd0
+    style A fill:#e3f2fd,stroke:#1976d2,color:#000000
+    style B fill:#fff9c4,stroke:#f57f17,color:#000000
+    style C fill:#ffe0b2,stroke:#e65100,color:#000000
+    style D fill:#c8e6c9,stroke:#1b5e20,color:#000000
+    style E fill:#c8e6c9,stroke:#1b5e20,color:#000000
+    style F fill:#c8e6c9,stroke:#1b5e20,color:#000000
+    style G fill:#c8e6c9,stroke:#1b5e20,color:#000000
+    style H fill:#b2dfdb,stroke:#00695c,color:#000000
+    style I fill:#f8bbd0,stroke:#880e4f,color:#ffffff
 ```
 
 ## Gene-Based Tool Execution Pipeline
@@ -104,13 +108,16 @@ graph TD
     
     I -->|Return to User| J["Display in Streamlit"]
     
-    style A fill:#e1f5ff
-    style B fill:#fff3e0
-    style D fill:#e8f5e9
-    style F fill:#f3e5f5
-    style G fill:#fce4ec
-    style H fill:#c8e6c9
-    style J fill:#bbdefb
+    style A fill:#e3f2fd,stroke:#1976d2,color:#000000
+    style B fill:#fff3e0,stroke:#f57f17,color:#000000
+    style C fill:#f3e5f5,stroke:#6a1b9a,color:#ffffff
+    style D fill:#e8f5e9,stroke:#1b5e20,color:#000000
+    style E fill:#e0f2f1,stroke:#00695c,color:#000000
+    style F fill:#fce4ec,stroke:#880e4f,color:#ffffff
+    style G fill:#ede7f6,stroke:#512da8,color:#ffffff
+    style H fill:#c8e6c9,stroke:#1b5e20,color:#000000
+    style I fill:#b2ebf2,stroke:#006064,color:#000000
+    style J fill:#bbdefb,stroke:#0d47a1,color:#ffffff
 ```
 
 ## EMBOSS Tool Resolution
@@ -131,12 +138,13 @@ graph LR
     E -->|Output Files| G["Parse Results"]
     G -->|Format| H["Return to User"]
     
-    style A fill:#e3f2fd
-    style B fill:#ffe0b2
-    style C fill:#c8e6c9
-    style D fill:#f8bbd0
-    style E fill:#b2dfdb
-    style H fill:#bbdefb
+    style A fill:#e3f2fd,stroke:#1976d2,color:#000000
+    style B fill:#ffe0b2,stroke:#e65100,color:#000000
+    style C fill:#c8e6c9,stroke:#1b5e20,color:#000000
+    style D fill:#f8bbd0,stroke:#880e4f,color:#ffffff
+    style E fill:#b2dfdb,stroke:#00695c,color:#000000
+    style G fill:#c5cae9,stroke:#3f51b5,color:#ffffff
+    style H fill:#bbdefb,stroke:#0d47a1,color:#ffffff
 ```
 
 ## Streamlit App Tab Flow
@@ -324,9 +332,13 @@ graph LR
     Ollama -.->|uses| LLM
     Conda -.->|manages| Python
     
-    style Streamlit fill:#fff3e0
-    style Python fill:#e3f2fd
-    style EMBOSS fill:#e8f5e9
-    style Ollama fill:#fff9c4
-    style Ensembl fill:#ffe0b2
+    style Streamlit fill:#fff3e0,stroke:#f57f17,color:#000000
+    style Python fill:#e3f2fd,stroke:#1976d2,color:#000000
+    style Bio fill:#e8f5e9,stroke:#1b5e20,color:#000000
+    style EMBOSS fill:#c8e6c9,stroke:#1b5e20,color:#000000
+    style Ollama fill:#fff9c4,stroke:#f57f17,color:#000000
+    style Ensembl fill:#ffccbc,stroke:#d84315,color:#ffffff
+    style UCSC fill:#ffab91,stroke:#bf360c,color:#ffffff
+    style NCBI fill:#ffd54f,stroke:#f57f17,color:#000000
+    style Conda fill:#f3e5f5,stroke:#6a1b9a,color:#ffffff
 ```
