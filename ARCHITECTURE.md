@@ -254,6 +254,8 @@ mindmap
       Restriction sites
       GC content analysis
       Isoelectric point calculation
+  
+  %%{init: { 'theme': 'base', 'primaryColor':'#42a5f5', 'primaryTextColor':'#fff', 'primaryBorderColor':'#1e88e5', 'secondBkgColor':'#66bb6a', 'tertiaryColor':'#ef5350'} }%%
 ```
 
 ## File Structure
@@ -283,12 +285,17 @@ graph TB
     EMBOSS -->|runs| Tools[("EMBOSS<br/>Tools")]
     EMBOSS -->|queries| Ensembl[("Ensembl<br/>API")]
     
-    style APP fill:#fff3e0
-    style NLP fill:#f3e5f5
-    style EMBOSS fill:#e8f5e9
-    style Ollama fill:#ffe0b2
-    style Tools fill:#c8e6c9
-    style Ensembl fill:#b2dfdb
+    style APP fill:#42a5f5,stroke:#1976d2,color:#ffffff,font-weight:bold
+    style NLP fill:#66bb6a,stroke:#2e7d32,color:#ffffff,font-weight:bold
+    style EMBOSS fill:#ef5350,stroke:#c62828,color:#ffffff,font-weight:bold
+    style REQ fill:#ab47bc,stroke:#6a1b9a,color:#ffffff,font-weight:bold
+    style README fill:#ab47bc,stroke:#6a1b9a,color:#ffffff,font-weight:bold
+    style GETTING fill:#ab47bc,stroke:#6a1b9a,color:#ffffff,font-weight:bold
+    style SETUP_SH fill:#ffa726,stroke:#f57c00,color:#ffffff,font-weight:bold
+    style SETUP_PS fill:#ffa726,stroke:#f57c00,color:#ffffff,font-weight:bold
+    style Ollama fill:#42a5f5,stroke:#1976d2,color:#ffffff,font-weight:bold
+    style Tools fill:#66bb6a,stroke:#2e7d32,color:#ffffff,font-weight:bold
+    style Ensembl fill:#ef5350,stroke:#c62828,color:#ffffff,font-weight:bold
 ```
 
 ## Technology Stack
@@ -325,11 +332,13 @@ graph LR
     Streamlit -.->|runs on| Python
     Python -->|imports| Bio
     Python -->|subprocess calls| EMBOSS
-    Python -->|HTTP requests| Ollama
+    Uses["uses"]
+    Python -->|HTTP requests| Uses
+    Uses -->|HTTP requests| Ollama
     Python -->|HTTP requests| Ensembl
     Python -->|HTTP requests| UCSC
     Python -->|HTTP requests| NCBI
-    Ollama -.->|uses| LLM
+    Ollama -.->|interfaces with| LLM
     Conda -.->|manages| Python
     
     style Streamlit fill:#f57f17,stroke:#e65100,color:#ffffff,font-weight:bold
@@ -341,4 +350,5 @@ graph LR
     style UCSC fill:#d32f2f,stroke:#b71c1c,color:#ffffff,font-weight:bold
     style NCBI fill:#e57100,stroke:#d84315,color:#ffffff,font-weight:bold
     style Conda fill:#6a1b9a,stroke:#4a148c,color:#ffffff,font-weight:bold
+    style Uses fill:#ffffff,stroke:#cccccc,color:#000000,font-weight:bold
 ```
