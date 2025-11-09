@@ -1129,11 +1129,33 @@ Keep it conversational and friendly."""
         """
         results = []
         cached_result = None
+        cached_sequence = None
+        previous_tool = None
         
         try:
             for idx, step in enumerate(steps):
                 tool_name = step.get('tool')
                 parameters = step.get('parameters', {}).copy()
+                
+                # Smart chaining: if previous step was gene_query and this step is BLAST/analysis tool
+                if previous_tool == 'gene_query' and tool_name in ['blast', 'blastn', 'blastp', 'blastx', 'search']:
+                    # Extract gene name from parameters and fetch its sequence
+                    gene_name = parameters.get('gene_name')
+                    if gene_name and 'sequence' not in parameters:
+                        print(f"[Step {idx+1}/{len(steps)}] Fetching sequence for {gene_name}...")
+                        # Get the actual sequence using get_transcript_sequence
+                        sequence = self.get_transcript_sequence(gene_name)
+                        if sequence and not sequence.startswith('Error'):
+                            # Clean up the sequence (remove formatting)
+                            sequence = ''.join(c for c in sequence if c.isalpha())
+                            parameters['sequence'] = sequence
+                            print(f"[Step {idx+1}/{len(steps)}] Using sequence ({len(sequence)} bp) for BLAST")
+                        else:
+                            return False, [{
+                                'step': idx + 1,
+                                'error': f"Could not fetch sequence for {gene_name}",
+                                'details': sequence
+                            }]
                 
                 # If using previous result, inject it into current step
                 if use_previous_result and cached_result and idx > 0:
@@ -1160,6 +1182,7 @@ Keep it conversational and friendly."""
                     
                     # Cache the result for potential use in next step
                     cached_result = output
+                    previous_tool = tool_name
                 except Exception as e:
                     results.append({
                         'step': idx + 1,
