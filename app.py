@@ -156,73 +156,130 @@ def main():
                     success, result = nlp.parse_user_query(user_query)
                     
                     if success:
-                        tool_name = result.get('tool')
-                        parameters = result.get('parameters', {})
-                        explanation = result.get('explanation', '')
-                        
-                        # Display parsed information
-                        st.markdown('<div class="tool-box">', unsafe_allow_html=True)
-                        st.write(f"**Tool Selected:** {tool_name}")
-                        st.write(f"**Explanation:** {explanation}")
-                        st.write(f"**Parameters:** {parameters}")
-                        st.markdown('</div>', unsafe_allow_html=True)
-                        
-                        # Run the tool
-                        with st.spinner(f"Running {tool_name}..."):
-                            try:
-                                summary = None
-                                
-                                # Handle genome queries specially
-                                if tool_name == 'genome_query':
-                                    sequence = emboss.query_ucsc_genome(
-                                        parameters.get('genome', ''),
-                                        parameters.get('chrom', ''),
-                                        int(parameters.get('start', 0)),
-                                        int(parameters.get('end', 0))
-                                    )
-                                    analysis_result = sequence
-                                # Handle gene queries specially
-                                elif tool_name == 'gene_query':
-                                    gene_info = emboss.query_gene_info(
-                                        parameters.get('gene_name', ''),
-                                        parameters.get('genome', 'hg38'),
-                                        parameters.get('track', 'gencode')
+                        # Check if this is a multi-step query
+                        if 'steps' in result:
+                            # Multi-step query
+                            st.markdown('<div class="tool-box">', unsafe_allow_html=True)
+                            st.write(f"**Multi-Step Workflow:** {result.get('explanation', 'N/A')}")
+                            st.write(f"**Number of Steps:** {len(result['steps'])}")
+                            
+                            for idx, step in enumerate(result['steps'], 1):
+                                st.write(f"  Step {idx}: {step.get('tool')} with {step.get('parameters', {})}")
+                            st.markdown('</div>', unsafe_allow_html=True)
+                            
+                            # Execute multi-step workflow
+                            with st.spinner("Executing multi-step workflow..."):
+                                try:
+                                    use_prev = result.get('use_previous_result', False)
+                                    success_multi, results = emboss.execute_multi_step(
+                                        result['steps'],
+                                        use_previous_result=use_prev
                                     )
                                     
-                                    # Get natural language summary
-                                    with st.spinner("Generating natural language summary..."):
-                                        summary = emboss.summarize_gene_info(gene_info)
+                                    if success_multi:
+                                        st.markdown('<div class="success-box">', unsafe_allow_html=True)
+                                        st.success("Multi-step analysis completed!")
+                                        
+                                        # Format and display results
+                                        formatted_output = emboss.format_multi_step_results(
+                                            results,
+                                            explanation=result.get('explanation', '')
+                                        )
+                                        
+                                        with st.expander("📊 Detailed Results"):
+                                            st.code(formatted_output, language="text")
+                                        
+                                        st.markdown('</div>', unsafe_allow_html=True)
+                                        
+                                        # Download button
+                                        st.download_button(
+                                            label="📥 Download Results",
+                                            data=formatted_output,
+                                            file_name="multi_step_results.txt",
+                                            mime="text/plain"
+                                        )
+                                    else:
+                                        st.markdown('<div class="error-box">', unsafe_allow_html=True)
+                                        st.error("One or more steps failed")
+                                        for result_item in results:
+                                            if not result_item.get('success'):
+                                                st.write(f"Step {result_item.get('step')}: {result_item.get('error')}")
+                                        st.markdown('</div>', unsafe_allow_html=True)
+                                
+                                except Exception as e:
+                                    st.markdown('<div class="error-box">', unsafe_allow_html=True)
+                                    st.error(f"Error executing multi-step workflow: {str(e)}")
+                                    st.markdown('</div>', unsafe_allow_html=True)
+                        
+                        else:
+                            # Single-step query (original code)
+                            tool_name = result.get('tool')
+                            parameters = result.get('parameters', {})
+                            explanation = result.get('explanation', '')
+                            
+                            # Display parsed information
+                            st.markdown('<div class="tool-box">', unsafe_allow_html=True)
+                            st.write(f"**Tool Selected:** {tool_name}")
+                            st.write(f"**Explanation:** {explanation}")
+                            st.write(f"**Parameters:** {parameters}")
+                            st.markdown('</div>', unsafe_allow_html=True)
+                            
+                            # Run the tool
+                            with st.spinner(f"Running {tool_name}..."):
+                                try:
+                                    summary = None
                                     
-                                    analysis_result = gene_info
-                                else:
-                                    analysis_result = emboss.run_tool(tool_name, **parameters)
-                                
-                                st.markdown('<div class="success-box">', unsafe_allow_html=True)
-                                st.success("Analysis completed!")
-                                
-                                # Show natural language summary for gene queries
-                                if summary:
-                                    st.subheader("📝 Answer:")
-                                    st.info(summary)
-                                
-                                # Expandable section for detailed results
-                                with st.expander("📊 Detailed Results"):
-                                    st.subheader("Detailed Information:")
-                                    st.code(analysis_result, language="text")
-                                
-                                st.markdown('</div>', unsafe_allow_html=True)
-                                
-                                # Download button
-                                st.download_button(
-                                    label="📥 Download Results",
-                                    data=analysis_result,
-                                    file_name=f"{tool_name}_results.txt",
-                                    mime="text/plain"
-                                )
-                            except Exception as e:
-                                st.markdown('<div class="error-box">', unsafe_allow_html=True)
-                                st.error(f"Error running tool: {str(e)}")
-                                st.markdown('</div>', unsafe_allow_html=True)
+                                    # Handle genome queries specially
+                                    if tool_name == 'genome_query':
+                                        sequence = emboss.query_ucsc_genome(
+                                            parameters.get('genome', ''),
+                                            parameters.get('chrom', ''),
+                                            int(parameters.get('start', 0)),
+                                            int(parameters.get('end', 0))
+                                        )
+                                        analysis_result = sequence
+                                    # Handle gene queries specially
+                                    elif tool_name == 'gene_query':
+                                        gene_info = emboss.query_gene_info(
+                                            parameters.get('gene_name', ''),
+                                            parameters.get('genome', 'hg38'),
+                                            parameters.get('track', 'gencode')
+                                        )
+                                        
+                                        # Get natural language summary
+                                        with st.spinner("Generating natural language summary..."):
+                                            summary = emboss.summarize_gene_info(gene_info)
+                                        
+                                        analysis_result = gene_info
+                                    else:
+                                        analysis_result = emboss.run_tool(tool_name, **parameters)
+                                    
+                                    st.markdown('<div class="success-box">', unsafe_allow_html=True)
+                                    st.success("Analysis completed!")
+                                    
+                                    # Show natural language summary for gene queries
+                                    if summary:
+                                        st.subheader("📝 Answer:")
+                                        st.info(summary)
+                                    
+                                    # Expandable section for detailed results
+                                    with st.expander("📊 Detailed Results"):
+                                        st.subheader("Detailed Information:")
+                                        st.code(analysis_result, language="text")
+                                    
+                                    st.markdown('</div>', unsafe_allow_html=True)
+                                    
+                                    # Download button
+                                    st.download_button(
+                                        label="📥 Download Results",
+                                        data=analysis_result,
+                                        file_name=f"{tool_name}_results.txt",
+                                        mime="text/plain"
+                                    )
+                                except Exception as e:
+                                    st.markdown('<div class="error-box">', unsafe_allow_html=True)
+                                    st.error(f"Error running tool: {str(e)}")
+                                    st.markdown('</div>', unsafe_allow_html=True)
                     else:
                         st.markdown('<div class="error-box">', unsafe_allow_html=True)
                         st.error(f"Could not parse query: {result.get('error', 'Unknown error')}")

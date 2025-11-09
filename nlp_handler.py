@@ -27,9 +27,16 @@ class NLPHandler:
         self.system_prompt = """You are a bioinformatics assistant that helps users run EMBOSS analysis tools and query genomic databases.
 
 When a user asks a question about DNA/protein sequences, genomic regions, genes, or tools, respond with a JSON object containing:
+
+FOR SINGLE OPERATIONS:
 1. "tool": the tool name (EMBOSS tool, 'genome_query', or 'gene_query')
 2. "parameters": a dict with required parameters
 3. "explanation": a brief explanation of what will be done
+
+FOR MULTI-STEP OPERATIONS (when user says "then", "and then", "after that", "next", etc.):
+1. "steps": a list of step objects, each containing "tool" and "parameters"
+2. "explanation": overall explanation of the workflow
+3. "use_previous_result": whether step N+1 should use output from step N
 
 IMPORTANT: When a user mentions a GENE SYMBOL (like ALKBH1, TP53, BRCA1), use the gene_name parameter, NOT sequence.
 
@@ -59,6 +66,18 @@ Decision logic:
 - If user mentions chromosome/genomic position -> use genome_query
 - Otherwise use appropriate EMBOSS tool
 
+MULTI-STEP EXAMPLE:
+User: "Find gene info for ALKBH1, then calculate its GC content"
+Response:
+{
+  "steps": [
+    {"tool": "gene_query", "parameters": {"gene_name": "ALKBH1"}},
+    {"tool": "gc", "parameters": {"gene_name": "ALKBH1"}}
+  ],
+  "explanation": "First query gene information for ALKBH1, then calculate GC content of its sequence",
+  "use_previous_result": false
+}
+
 TRANSCRIPT VARIANT EXTRACTION:
 - If user mentions "transcript variant N" or "primary variant" or "variant N", extract this as "transcript_variant": "transcript variant N"
 - Examples: "transcript variant 5" -> "transcript_variant": "transcript variant 5"
@@ -70,6 +89,7 @@ Examples:
 - "Translate TP53" -> translate tool with gene_name: TP53
 - "What's the reverse complement of BRCA1?" -> reverse tool with gene_name: BRCA1
 - "Give the length of the protein made from transcript variant 5 of CARS1" -> translate tool with gene_name: CARS1, transcript_variant: "transcript variant 5"
+- "Find gene info for ALKBH1, then calculate its GC content" -> multi-step with gene_query followed by gc
 
 Always respond with ONLY valid JSON, no other text. Start with { and end with }"""
 
@@ -80,7 +100,7 @@ Always respond with ONLY valid JSON, no other text. Start with { and end with }"
             query: User's natural language query
         
         Returns:
-            Tuple of (success: bool, result: dict with tool, parameters, explanation)
+            Tuple of (success: bool, result: dict with tool, parameters, explanation OR steps, explanation)
         """
         try:
             # Call Ollama with the system prompt
@@ -107,11 +127,17 @@ Always respond with ONLY valid JSON, no other text. Start with { and end with }"
             # Parse JSON response
             result = json.loads(response_text)
             
-            # Validate the response
-            if 'tool' not in result or 'parameters' not in result:
+            # Validate the response - can be either single tool or multi-step
+            if 'steps' in result:
+                # Multi-step query
+                if not isinstance(result['steps'], list) or len(result['steps']) == 0:
+                    return False, {"error": "Invalid steps format"}
+                return True, result
+            elif 'tool' in result and 'parameters' in result:
+                # Single-step query
+                return True, result
+            else:
                 return False, {"error": "Invalid response format from LLM"}
-            
-            return True, result
         
         except json.JSONDecodeError as e:
             return False, {"error": f"Failed to parse LLM response as JSON: {str(e)}"}

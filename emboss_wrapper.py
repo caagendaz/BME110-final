@@ -999,6 +999,110 @@ Keep it conversational and friendly."""
         
         except Exception as e:
             return f"Error: Failed to run {tool_name}: {str(e)}"
+    
+    def execute_multi_step(self, steps: List[Dict], use_previous_result: bool = False) -> Tuple[bool, List[Dict]]:
+        """Execute multiple analysis steps in sequence with caching
+        
+        Args:
+            steps: List of step dicts containing "tool" and "parameters"
+            use_previous_result: If True, feed output from step N to step N+1
+        
+        Returns:
+            Tuple of (success: bool, results: list of result dicts with step info and output)
+        """
+        results = []
+        cached_result = None
+        
+        try:
+            for idx, step in enumerate(steps):
+                tool_name = step.get('tool')
+                parameters = step.get('parameters', {}).copy()
+                
+                # If using previous result, inject it into current step
+                if use_previous_result and cached_result and idx > 0:
+                    # Try to use the sequence output from previous step
+                    if 'sequence' not in parameters and '_sequence' not in parameters:
+                        parameters['sequence'] = cached_result
+                
+                # Execute the tool
+                print(f"[Step {idx+1}/{len(steps)}] Running {tool_name}...")
+                success, output = self.run_tool(tool_name, **parameters)
+                
+                if not success:
+                    results.append({
+                        'step': idx + 1,
+                        'tool': tool_name,
+                        'success': False,
+                        'error': output,
+                        'parameters': parameters
+                    })
+                    # Stop on first error
+                    return False, results
+                
+                # Cache the result for potential use in next step
+                cached_result = output
+                
+                results.append({
+                    'step': idx + 1,
+                    'tool': tool_name,
+                    'success': True,
+                    'output': output,
+                    'parameters': parameters
+                })
+            
+            return True, results
+        
+        except Exception as e:
+            results.append({
+                'step': len(results) + 1,
+                'error': f"Multi-step execution failed: {str(e)}"
+            })
+            return False, results
+    
+    def format_multi_step_results(self, results: List[Dict], explanation: str = "") -> str:
+        """Format multi-step results for display
+        
+        Args:
+            results: List of result dicts from execute_multi_step
+            explanation: Overall explanation of the workflow
+        
+        Returns:
+            Formatted results string
+        """
+        output = ""
+        
+        if explanation:
+            output += f"📋 Workflow: {explanation}\n"
+            output += "=" * 60 + "\n\n"
+        
+        for result in results:
+            step_num = result.get('step', '?')
+            tool = result.get('tool', 'unknown')
+            
+            output += f"Step {step_num}: {tool.upper()}\n"
+            output += "-" * 40 + "\n"
+            
+            if result.get('success'):
+                params = result.get('parameters', {})
+                if params:
+                    output += "Parameters: "
+                    param_strs = []
+                    for k, v in params.items():
+                        if isinstance(v, str) and len(v) > 50:
+                            param_strs.append(f"{k}={v[:50]}...")
+                        else:
+                            param_strs.append(f"{k}={v}")
+                    output += ", ".join(param_strs) + "\n"
+                
+                result_text = result.get('output', '')
+                if isinstance(result_text, str) and len(result_text) > 500:
+                    output += f"Output:\n{result_text[:500]}...\n\n"
+                else:
+                    output += f"Output:\n{result_text}\n\n"
+            else:
+                output += f"❌ Error: {result.get('error', 'Unknown error')}\n\n"
+        
+        return output
 
 
 if __name__ == "__main__":
