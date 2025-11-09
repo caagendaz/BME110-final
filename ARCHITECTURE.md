@@ -75,7 +75,7 @@ graph LR
     
     H -->|Pass to EMBOSS Wrapper| I["Execute Operation"]
     
-    style A fill:#e3f2fd,stroke:#1976d2,color:#ffffff,font-weight:bold
+    style A fill:#1565c0,stroke:#0d47a1,color:#ffffff,font-weight:bold
     style B fill:#1565c0,stroke:#0d47a1,color:#ffffff,font-weight:bold
     style C fill:#f57f17,stroke:#e65100,color:#ffffff,font-weight:bold
     style D fill:#2e7d32,stroke:#1b5e20,color:#ffffff,font-weight:bold
@@ -266,6 +266,8 @@ graph TB
         APP["app.py<br/>Streamlit web interface"]
         NLP["nlp_handler.py<br/>Ollama NLP integration"]
         EMBOSS["emboss_wrapper.py<br/>EMBOSS tool wrapper"]
+        APP -->|imports| NLP
+        APP -->|imports| EMBOSS
     end
     
     subgraph Config["Configuration"]
@@ -279,11 +281,9 @@ graph TB
         SETUP_PS["setup_windows.ps1<br/>Windows setup"]
     end
     
-    APP -->|imports| NLP
-    APP -->|imports| EMBOSS
-    NLP -->|queries| Ollama[("Ollama<br/>gemma3:4b")]
-    EMBOSS -->|runs| Tools[("EMBOSS<br/>Tools")]
-    EMBOSS -->|queries| Ensembl[("Ensembl<br/>API")]
+    Code -->|queries| Ollama[("Ollama<br/>gemma3:4b")]
+    Code -->|runs| Tools[("EMBOSS<br/>Tools")]
+    Code -->|queries| Ensembl[("Ensembl<br/>API")]
     
     style APP fill:#42a5f5,stroke:#1976d2,color:#ffffff,font-weight:bold
     style NLP fill:#66bb6a,stroke:#2e7d32,color:#ffffff,font-weight:bold
