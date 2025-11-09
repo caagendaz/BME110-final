@@ -181,7 +181,10 @@ Always respond with ONLY valid JSON, no other text. Start with { and end with }"
         for idx, step in enumerate(steps):
             step_copy = step.copy()
             tool_name = step_copy.get('tool', '').lower()
-            parameters = step_copy.get('parameters', {}).copy()
+            parameters = step_copy.get('parameters', {})
+            if not isinstance(parameters, dict):
+                parameters = {}
+            parameters = parameters.copy()  # Make a copy to avoid modifying original
             
             # Check if previous step was gene_query
             if idx > 0:
@@ -195,8 +198,8 @@ Always respond with ONLY valid JSON, no other text. Start with { and end with }"
                         seq_value = parameters['sequence']
                         # If sequence is short and all letters (like 'ALKBH1'), it's a gene name - remove it
                         if isinstance(seq_value, str) and len(seq_value) < 20 and seq_value.replace('_', '').isalpha():
+                            print(f"🔧 [Cleanup] Removing sequence='{seq_value}' from step {idx+1} ({tool_name}) - detected as gene name")
                             del parameters['sequence']
-                            print(f"  [Cleanup] Removed sequence='{seq_value}' from {tool_name} - will auto-chain from gene_query")
             
             step_copy['parameters'] = parameters
             cleaned_steps.append(step_copy)
