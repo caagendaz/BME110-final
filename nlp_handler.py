@@ -51,6 +51,11 @@ EMBOSS tools (use 'gene_name' for gene symbols, 'sequence' for raw DNA/protein s
 - info: Get sequence info. Needs "gene_name" OR "sequence"
 - sixframe: Show all 6 reading frames. Needs "gene_name" OR "sequence"
 - gc: Calculate GC content. Needs "gene_name" OR "sequence"
+- blast: Search NCBI databases for similar sequences. Needs "sequence" and optional "blast_type" (blastn/blastp/blastx), "database" (nt/nr), "max_results" (default 10), "expect_threshold" (default 10.0)
+- blastn: DNA BLAST search. Needs "sequence"
+- blastp: Protein BLAST search. Needs "sequence"
+- blastx: DNA to protein BLAST search. Needs "sequence"
+- search: General sequence search (uses blastn by default). Needs "sequence"
 
 GENOME QUERY tool:
 - genome_query: Query UCSC Genome Browser for genomic regions. Needs "genome", "chrom", "start", "end"
@@ -61,8 +66,8 @@ GENE QUERY tool:
 Decision logic:
 - If user mentions a GENE NAME/SYMBOL (like ALKBH1, TP53, BRCA1, etc.):
   - If asking about gene structure (exons, CDS, transcripts) -> use gene_query with gene_name
-  - If asking to apply a tool (translate, gc, etc.) to that gene -> use the tool with gene_name parameter and transcript_variant if specified
-- If user provides raw DNA/RNA/protein sequences (like ATGCCC or MKLA...) -> use the tool with sequence parameter
+  - If asking to apply a tool (translate, gc, BLAST, etc.) to that gene -> use the tool with gene_name parameter and transcript_variant if specified
+- If user provides raw DNA/RNA/protein sequences (like ATGCCC or MKLA...) or mentions "BLAST", "search", "similar sequences", "homologous" -> use the appropriate search/BLAST tool with sequence parameter
 - If user mentions chromosome/genomic position -> use genome_query
 - Otherwise use appropriate EMBOSS tool
 
@@ -90,6 +95,10 @@ Examples:
 - "What's the reverse complement of BRCA1?" -> reverse tool with gene_name: BRCA1
 - "Give the length of the protein made from transcript variant 5 of CARS1" -> translate tool with gene_name: CARS1, transcript_variant: "transcript variant 5"
 - "Find gene info for ALKBH1, then calculate its GC content" -> multi-step with gene_query followed by gc
+- "BLAST this sequence against the human genome: ATGCGATCG" -> blast tool with sequence: ATGCGATCG, blast_type: blastn
+- "Find BRCA1 sequence, then BLAST it to find homologous genes" -> multi-step: gene_query for BRCA1, then blast with gene_name: BRCA1 (auto-resolved to sequence)
+- "Search for similar proteins to MKLASELKD" -> blastp tool with sequence: MKLASELKD
+- "Find homologous DNA sequences to this: ATGCCC" -> blastn tool with sequence: ATGCCC
 
 Always respond with ONLY valid JSON, no other text. Start with { and end with }"""
 

@@ -39,7 +39,12 @@ class EMBOSSWrapper:
             'download': 'download_sequence',
             'geecee': 'gc_content',
             'isoelectric': 'iep',
-            'charge': 'iep'
+            'charge': 'iep',
+            'blast': 'blast',
+            'blastn': 'blastn',
+            'blastp': 'blastp',
+            'blastx': 'blastx',
+            'search': 'blast'
         }
         
         # Tool descriptions for user guidance
@@ -811,14 +816,84 @@ Keep it conversational and friendly."""
         except Exception:
             return None
     
+    def run_blast(self, sequence: str, blast_type: str = 'blastn', database: str = 'nt', 
+                  max_results: int = 10, expect_threshold: float = 10.0) -> str:
+        """Run BLAST search against NCBI databases using remote Entrez service
+        
+        Args:
+            sequence: Query sequence (DNA, RNA, or protein)
+            blast_type: 'blastn' (DNA), 'blastp' (protein), 'blastx' (DNA->protein)
+            database: NCBI database ('nt' for nucleotide, 'nr' for protein, etc.)
+            max_results: Maximum number of results to return
+            expect_threshold: E-value threshold for reporting
+        
+        Returns:
+            str: Formatted BLAST results with hits, E-values, and identity percentages
+        """
+        try:
+            from Bio.Blast import NCBIXML
+            from Bio import Entrez
+            
+            # Set Entrez email (required by NCBI)
+            Entrez.email = "user@bioquery.local"
+            
+            print(f"Submitting {blast_type} search to NCBI (this may take 10-30 seconds)...")
+            
+            # Submit BLAST query
+            result_handle = Entrez.qblast(blast_type, database, sequence, 
+                                         hitlist_size=max_results, 
+                                         expect=expect_threshold,
+                                         format_type="XML")
+            
+            # Parse results
+            blast_records = NCBIXML.parse(result_handle)
+            
+            output = []
+            output.append(f"BLAST {blast_type.upper()} Results")
+            output.append("=" * 60)
+            
+            result_count = 0
+            for record in blast_records:
+                result_count += 1
+                output.append(f"\nQuery: {record.query}")
+                output.append(f"Query Length: {record.query_length} bp")
+                output.append(f"Number of Alignments: {len(record.alignments)}")
+                output.append("-" * 60)
+                
+                if len(record.alignments) == 0:
+                    output.append("No matches found")
+                    continue
+                
+                for alignment_idx, alignment in enumerate(record.alignments[:max_results], 1):
+                    output.append(f"\nHit {alignment_idx}: {alignment.title}")
+                    output.append(f"  Accession: {alignment.accession}")
+                    output.append(f"  Length: {alignment.length} bp")
+                    
+                    for hsp_idx, hsp in enumerate(alignment.hsps[:3], 1):  # Top 3 HSPs per hit
+                        output.append(f"    HSP {hsp_idx}:")
+                        output.append(f"      E-value: {hsp.expect:.2e}")
+                        output.append(f"      Score: {hsp.score} bits")
+                        output.append(f"      Identity: {hsp.identities}/{hsp.align_length} ({100*hsp.identities//hsp.align_length}%)")
+                        output.append(f"      Query: {hsp.query[:60]}...")
+                        output.append(f"      Sbjct: {hsp.sbjct[:60]}...")
+            
+            if result_count == 0:
+                output.append("No results returned from BLAST search")
+            
+            return "\n".join(output)
+            
+        except Exception as e:
+            return f"BLAST search failed: {str(e)}\n\nMake sure you have an internet connection and the sequence format is correct."
+
     def run_tool(self, tool_name: str, **kwargs) -> str:
-        """Generic method to run any EMBOSS tool
+        """Generic method to run any EMBOSS tool or BLAST
         
         Supports:
         - Specific hardcoded implementations for common tools (transeq, revseq, etc.)
         - Generic fallback for any other EMBOSS tool (iep, charge, etc.)
         - Gene-based access: any tool can accept gene_name and auto-resolve to sequence
         - Transcript variant selection: specify which transcript variant to use
+        - BLAST searches via NCBI
         
         Args:
             tool_name: Name of the tool to run (natural language or EMBOSS name)
@@ -932,6 +1007,16 @@ Keep it conversational and friendly."""
                     kwargs.get('end', None),
                     kwargs.get('db', 'nucleotide')
                 )
+        elif emboss_name in ['blast', 'blastn', 'blastp', 'blastx', 'search']:
+            # Route BLAST requests to remote NCBI service
+            blast_type = 'blastn' if emboss_name in ['blast', 'search'] else emboss_name
+            return self.run_blast(
+                kwargs.get('sequence', ''),
+                blast_type=blast_type,
+                database=kwargs.get('database', 'nt'),
+                max_results=int(kwargs.get('max_results', 10)),
+                expect_threshold=float(kwargs.get('expect_threshold', 10.0))
+            )
         else:
             # Generic fallback for any other EMBOSS tool (iep, charge, mwfilter, etc.)
             return self._run_generic_emboss_tool(emboss_name, **kwargs)
