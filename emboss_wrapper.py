@@ -40,6 +40,8 @@ class EMBOSSWrapper:
             'geecee': 'gc_content',
             'isoelectric': 'iep',
             'charge': 'iep',
+            'gene_query': 'gene_query',
+            'gene': 'gene_query',
             'blast': 'blast',
             'blastn': 'blastn',
             'blastp': 'blastp',
@@ -1007,11 +1009,27 @@ Keep it conversational and friendly."""
                     kwargs.get('end', None),
                     kwargs.get('db', 'nucleotide')
                 )
+        elif emboss_name == 'gene_query':
+            # Query gene information from Ensembl
+            return self.query_gene_info(kwargs.get('gene_name', ''), kwargs.get('genome', 'hg38'), kwargs.get('track', 'gencode'))
         elif emboss_name in ['blast', 'blastn', 'blastp', 'blastx', 'search']:
             # Route BLAST requests to remote NCBI service
             blast_type = 'blastn' if emboss_name in ['blast', 'search'] else emboss_name
+            
+            # Get sequence - may be provided directly or as a gene name to resolve
+            sequence = kwargs.get('sequence', '')
+            if not sequence and ('gene_name' in kwargs or 'gene' in kwargs):
+                # Resolve gene to sequence first
+                gene = kwargs.get('gene_name') or kwargs.get('gene')
+                gene_info = self.query_gene_info(gene)
+                if gene_info and not gene_info.startswith('Error'):
+                    # Extract sequence from gene info (it's typically in FASTA format)
+                    lines = gene_info.split('\n')
+                    seq_lines = [l for l in lines if l and not l.startswith('>')]
+                    sequence = ''.join(seq_lines)
+            
             return self.run_blast(
-                kwargs.get('sequence', ''),
+                sequence,
                 blast_type=blast_type,
                 database=kwargs.get('database', 'nt'),
                 max_results=int(kwargs.get('max_results', 10)),
@@ -1111,21 +1129,32 @@ Keep it conversational and friendly."""
                 
                 # Execute the tool
                 print(f"[Step {idx+1}/{len(steps)}] Running {tool_name}...")
-                success, output = self.run_tool(tool_name, **parameters)
-                
-                if not success:
+                try:
+                    output = self.run_tool(tool_name, **parameters)
+                    
+                    # Check if output indicates an error
+                    if output.startswith('Error') or output.startswith('BLAST search failed'):
+                        results.append({
+                            'step': idx + 1,
+                            'tool': tool_name,
+                            'success': False,
+                            'error': output,
+                            'parameters': parameters
+                        })
+                        # Stop on first error
+                        return False, results
+                    
+                    # Cache the result for potential use in next step
+                    cached_result = output
+                except Exception as e:
                     results.append({
                         'step': idx + 1,
                         'tool': tool_name,
                         'success': False,
-                        'error': output,
+                        'error': str(e),
                         'parameters': parameters
                     })
-                    # Stop on first error
                     return False, results
-                
-                # Cache the result for potential use in next step
-                cached_result = output
                 
                 results.append({
                     'step': idx + 1,
