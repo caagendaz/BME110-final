@@ -191,15 +191,26 @@ Always respond with ONLY valid JSON, no other text. Start with { and end with }"
                 prev_step = steps[idx - 1]
                 prev_tool = prev_step.get('tool', '').lower()
                 
+                print(f"🔍 Step {idx}: tool='{tool_name}', prev_tool='{prev_tool}'")
+                
                 # If previous was gene_query and current is a dependent tool
-                if prev_tool == 'gene_query' and tool_name in ['blast', 'blastn', 'blastp', 'blastx', 'search', 'translate', 'gc', 'gc_content', 'reverse', 'orf', 'getorf']:
+                # Including 'blast' and variations
+                dependent_tools = ['blast', 'blastn', 'blastp', 'blastx', 'search', 'translate', 'gc', 'gc_content', 'reverse', 'orf', 'getorf']
+                
+                if prev_tool == 'gene_query' and tool_name in dependent_tools:
+                    print(f"  ✓ Previous is gene_query, current is {tool_name}")
                     # Remove 'sequence' if it's just a gene name (not actual bases)
                     if 'sequence' in parameters:
                         seq_value = parameters['sequence']
+                        print(f"  Found sequence param: '{seq_value}'")
                         # If sequence is short and all letters (like 'ALKBH1'), it's a gene name - remove it
                         if isinstance(seq_value, str) and len(seq_value) < 20 and seq_value.replace('_', '').isalpha():
-                            print(f"🔧 [Cleanup] Removing sequence='{seq_value}' from step {idx+1} ({tool_name}) - detected as gene name")
+                            print(f"  🔧 REMOVING sequence='{seq_value}' (detected as gene name)")
                             del parameters['sequence']
+                        else:
+                            print(f"  Not removing: len={len(seq_value)}, isalpha={seq_value.replace('_', '').isalpha()}")
+                    else:
+                        print(f"  No 'sequence' param found")
             
             step_copy['parameters'] = parameters
             cleaned_steps.append(step_copy)
