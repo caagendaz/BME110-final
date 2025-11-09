@@ -255,7 +255,11 @@ mindmap
       GC content analysis
       Isoelectric point calculation
   
-  %%{init: { 'theme': 'base', 'primaryColor':'#42a5f5', 'primaryTextColor':'#fff', 'primaryBorderColor':'#1e88e5', 'secondBkgColor':'#66bb6a', 'tertiaryColor':'#ef5350'} }%%
+  %%{init: { 'theme': 'base', 'primaryColor':'#42a5f5', 'primaryTextColor':'#fff', 'primaryBorderColor':'#1e88e5', 'secondBkgColor':'#66bb6a', 'tertiaryColor':'#ef5350', 'tertiaryTextColor':'#fff', 'textPlacement': 'center', 'noteBkg':'#fff', 'noteBkgColor':'#fff'} }%%
+  
+  classDef default fill:#42a5f5,stroke:#1976d2,color:#fff,text-decoration:none
+  classDef primary fill:#66bb6a,stroke:#2e7d32,color:#fff,text-decoration:none
+  classDef secondary fill:#ef5350,stroke:#c62828,color:#fff,text-decoration:none
 ```
 
 ## File Structure
