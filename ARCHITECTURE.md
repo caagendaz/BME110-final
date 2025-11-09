@@ -338,7 +338,9 @@ graph LR
     Python -->|HTTP requests| Ensembl
     Python -->|HTTP requests| UCSC
     Python -->|HTTP requests| NCBI
-    Ollama -.->|interfaces with| LLM
+    LLMLabel["interfaces<br/>with"]
+    Ollama -.-> LLMLabel
+    LLMLabel -.-> LLM
     Conda -.->|manages| Python
     
     style Streamlit fill:#f57f17,stroke:#e65100,color:#ffffff,font-weight:bold
@@ -351,4 +353,5 @@ graph LR
     style NCBI fill:#e57100,stroke:#d84315,color:#ffffff,font-weight:bold
     style Conda fill:#6a1b9a,stroke:#4a148c,color:#ffffff,font-weight:bold
     style Uses fill:#ffffff,stroke:#cccccc,color:#000000,font-weight:bold
+    style LLMLabel fill:#ffffff,stroke:#cccccc,color:#000000,font-weight:bold
 ```
