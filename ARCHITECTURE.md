@@ -281,9 +281,9 @@ graph TB
         SETUP_PS["setup_windows.ps1<br/>Windows setup"]
     end
     
-    Code -->|queries| Ollama[("Ollama<br/>gemma3:4b")]
-    Code -->|runs| Tools[("EMBOSS<br/>Tools")]
-    Code -->|queries| Ensembl[("Ensembl<br/>API")]
+    NLP -->|HTTP requests| Ollama[("Ollama<br/>gemma3:4b")]
+    EMBOSS -->|subprocess| Tools[("EMBOSS<br/>Tools")]
+    EMBOSS -->|HTTP requests| Ensembl[("Ensembl<br/>API")]
     
     style APP fill:#42a5f5,stroke:#1976d2,color:#ffffff,font-weight:bold
     style NLP fill:#66bb6a,stroke:#2e7d32,color:#ffffff,font-weight:bold
