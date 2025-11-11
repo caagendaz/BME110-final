@@ -1147,9 +1147,9 @@ Keep it conversational and friendly."""
                     # If sequence was removed during cleanup (gene name detection), fetch the actual sequence
                     if 'sequence' not in parameters and previous_gene_name:
                         print(f"[Step {idx+1}/{len(steps)}] Fetching sequence for {previous_gene_name}...")
-                        # Get the actual sequence using get_transcript_sequence
-                        sequence = self.get_transcript_sequence(previous_gene_name)
-                        if sequence and not sequence.startswith('Error'):
+                        # Use _resolve_sequence_from_gene which handles gene name -> transcript -> sequence
+                        sequence = self._resolve_sequence_from_gene(previous_gene_name, seq_type='cdna')
+                        if sequence:
                             # Clean up the sequence (remove formatting)
                             sequence = ''.join(c for c in sequence if c.isalpha())
                             parameters['sequence'] = sequence
@@ -1158,15 +1158,15 @@ Keep it conversational and friendly."""
                             return False, [{
                                 'step': idx + 1,
                                 'error': f"Could not fetch sequence for {previous_gene_name}",
-                                'details': sequence
+                                'details': "Failed to resolve gene name to transcript sequence"
                             }]
                     # Also check if gene_name is in current parameters (fallback)
                     elif 'sequence' not in parameters:
                         gene_name = parameters.get('gene_name')
                         if gene_name:
                             print(f"[Step {idx+1}/{len(steps)}] Fetching sequence for {gene_name}...")
-                            sequence = self.get_transcript_sequence(gene_name)
-                            if sequence and not sequence.startswith('Error'):
+                            sequence = self._resolve_sequence_from_gene(gene_name, seq_type='cdna')
+                            if sequence:
                                 sequence = ''.join(c for c in sequence if c.isalpha())
                                 parameters['sequence'] = sequence
                                 print(f"[Step {idx+1}/{len(steps)}] Using sequence ({len(sequence)} bp) for BLAST")
@@ -1174,7 +1174,7 @@ Keep it conversational and friendly."""
                                 return False, [{
                                     'step': idx + 1,
                                     'error': f"Could not fetch sequence for {gene_name}",
-                                    'details': sequence
+                                    'details': "Failed to resolve gene name to transcript sequence"
                                 }]
                 
                 # If using previous result, inject it into current step
