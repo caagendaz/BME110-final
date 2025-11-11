@@ -1131,20 +1131,24 @@ Keep it conversational and friendly."""
         cached_result = None
         cached_sequence = None
         previous_tool = None
+        previous_gene_name = None  # Track gene name from gene_query
         
         try:
             for idx, step in enumerate(steps):
                 tool_name = step.get('tool')
                 parameters = step.get('parameters', {}).copy()
                 
+                # Track gene name from gene_query step
+                if tool_name == 'gene_query':
+                    previous_gene_name = parameters.get('gene_name') or parameters.get('gene')
+                
                 # Smart chaining: if previous step was gene_query and this step is BLAST/analysis tool
                 if previous_tool == 'gene_query' and tool_name in ['blast', 'blastn', 'blastp', 'blastx', 'search']:
-                    # Extract gene name from parameters and fetch its sequence
-                    gene_name = parameters.get('gene_name')
-                    if gene_name and 'sequence' not in parameters:
-                        print(f"[Step {idx+1}/{len(steps)}] Fetching sequence for {gene_name}...")
+                    # If sequence was removed during cleanup (gene name detection), fetch the actual sequence
+                    if 'sequence' not in parameters and previous_gene_name:
+                        print(f"[Step {idx+1}/{len(steps)}] Fetching sequence for {previous_gene_name}...")
                         # Get the actual sequence using get_transcript_sequence
-                        sequence = self.get_transcript_sequence(gene_name)
+                        sequence = self.get_transcript_sequence(previous_gene_name)
                         if sequence and not sequence.startswith('Error'):
                             # Clean up the sequence (remove formatting)
                             sequence = ''.join(c for c in sequence if c.isalpha())
@@ -1153,9 +1157,25 @@ Keep it conversational and friendly."""
                         else:
                             return False, [{
                                 'step': idx + 1,
-                                'error': f"Could not fetch sequence for {gene_name}",
+                                'error': f"Could not fetch sequence for {previous_gene_name}",
                                 'details': sequence
                             }]
+                    # Also check if gene_name is in current parameters (fallback)
+                    elif 'sequence' not in parameters:
+                        gene_name = parameters.get('gene_name')
+                        if gene_name:
+                            print(f"[Step {idx+1}/{len(steps)}] Fetching sequence for {gene_name}...")
+                            sequence = self.get_transcript_sequence(gene_name)
+                            if sequence and not sequence.startswith('Error'):
+                                sequence = ''.join(c for c in sequence if c.isalpha())
+                                parameters['sequence'] = sequence
+                                print(f"[Step {idx+1}/{len(steps)}] Using sequence ({len(sequence)} bp) for BLAST")
+                            else:
+                                return False, [{
+                                    'step': idx + 1,
+                                    'error': f"Could not fetch sequence for {gene_name}",
+                                    'details': sequence
+                                }]
                 
                 # If using previous result, inject it into current step
                 if use_previous_result and cached_result and idx > 0:
