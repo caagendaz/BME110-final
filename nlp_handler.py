@@ -203,12 +203,18 @@ Always respond with ONLY valid JSON, no other text. Start with { and end with }"
                     if 'sequence' in parameters:
                         seq_value = parameters['sequence']
                         print(f"  Found sequence param: '{seq_value}'")
-                        # If sequence is short and all letters (like 'ALKBH1'), it's a gene name - remove it
-                        if isinstance(seq_value, str) and len(seq_value) < 20 and seq_value.replace('_', '').isalpha():
+                        # If sequence is short and looks like a gene name (not pure DNA/protein sequence)
+                        # Gene names: ALKBH1, TP53, BRCA1 (letters/numbers, short)
+                        # DNA sequences: ATCGATCGATCG (only ATCGN)
+                        is_short = len(seq_value) < 20
+                        is_mostly_letters = sum(1 for c in seq_value if c.isalpha()) > len(seq_value) * 0.5
+                        is_not_pure_sequence = not all(c.upper() in 'ATCGNU' for c in seq_value if c.isalpha())
+                        
+                        if isinstance(seq_value, str) and is_short and (is_mostly_letters or is_not_pure_sequence):
                             print(f"  🔧 REMOVING sequence='{seq_value}' (detected as gene name)")
                             del parameters['sequence']
                         else:
-                            print(f"  Not removing: len={len(seq_value)}, isalpha={seq_value.replace('_', '').isalpha()}")
+                            print(f"  Not removing: short={is_short}, mostly_letters={is_mostly_letters}, not_pure_seq={is_not_pure_sequence}")
                     else:
                         print(f"  No 'sequence' param found")
             
