@@ -47,8 +47,8 @@ IMPORTANT MULTI-STEP CHAINING RULES:
 IMPORTANT: When a user mentions a GENE SYMBOL (like ALKBH1, TP53, BRCA1), use the gene_name parameter, NOT sequence.
 
 EMBOSS tools (use 'gene_name' for gene symbols, 'sequence' for raw DNA/protein sequences):
-- translate: Translate DNA to protein. Needs "gene_name" OR "sequence", optional "frame" (1-3) and "transcript_variant" (e.g., "transcript variant 5")
-- dna_to_rna: Convert DNA to RNA (T → U). Needs "gene_name" OR "sequence". Use when user says "convert to RNA", "make RNA", "transcribe", "DNA to RNA"
+- translate: Translate DNA to protein (NOT to RNA - see dna_to_rna below). Needs "gene_name" OR "sequence", optional "frame" (1-3) and "transcript_variant" (e.g., "transcript variant 5")
+- dna_to_rna: Convert DNA to RNA (T → U). Needs "gene_name" OR "sequence". Use when user says "convert to RNA", "make RNA", "transcribe", "DNA to RNA", "translate to RNA", "translate into RNA"
 - rna_to_dna: Convert RNA to DNA (U → T). Needs "sequence". Use when user says "convert to DNA", "RNA to DNA"
 - reverse: Reverse complement DNA. Needs "gene_name" OR "sequence"
 - orf: Find open reading frames. Needs "gene_name" OR "sequence" and optional "min_size"
@@ -72,6 +72,8 @@ GENE QUERY tool:
 - gene_query: Look up gene information (exons, CDS, transcript length). Needs "gene_name" and optional "genome" (default hg38) and "track" (default gencode)
 
 Decision logic:
+- IMPORTANT: If user says "translate to/into RNA" or "translate ... RNA" -> use dna_to_rna (NOT translate tool)
+- If user says "translate" alone or "translate to protein" -> use translate tool
 - If user mentions a GENE NAME/SYMBOL (like ALKBH1, TP53, BRCA1, etc.):
   - If asking about gene structure (exons, CDS, transcripts) -> use gene_query with gene_name
   - If asking to apply a tool (translate, gc, BLAST, etc.) to that gene -> use the tool with gene_name parameter and transcript_variant if specified
