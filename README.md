@@ -7,10 +7,13 @@ A Streamlit web application that uses natural language AI (Ollama) to convert us
 ## Features
 
 - 🤖 **Natural Language Interface**: Ask questions in plain English, get bioinformatics analysis
-- 🧬 **EMBOSS Integration**: Access 13+ powerful EMBOSS tools
-- 🎯 **AI-Powered**: Local LLM (Ollama) for intelligent tool selection
-- 🌐 **Web Interface**: Beautiful Streamlit UI for easy interaction
-- 📊 **Multiple Tools**: Translate, Reverse, ORF finding, Alignment, Restriction sites, and more
+- 🧬 **EMBOSS Integration**: Access 258+ powerful EMBOSS tools (dynamically discovered)
+- 🧪 **Gene-Based Queries**: Query genes by symbol (e.g., "translate ALKBH1") with Ensembl API integration
+- 🔬 **BLAST Integration**: Run NCBI BLAST searches on sequences or genes remotely via BioPython
+- � **Multi-Step Workflows**: Chain operations together (e.g., "find gene ALKBH1 then BLAST it")
+- 🧬 **DNA/RNA Conversion**: Convert between DNA and RNA sequences (T↔U)
+- 🎯 **AI-Powered**: Local LLM (Ollama) for intelligent tool selection and parameter extraction
+- 🌐 **Web Interface**: Beautiful Streamlit UI with 5 integrated tabs
 - 💾 **Results Export**: Download analysis results as text files
 
 ## Quick Start
@@ -87,8 +90,18 @@ The app will open at `http://localhost:8501`
    - "Translate this DNA to protein: ATGAAATTTCCC"
    - "What's the reverse complement of GCTA?"
    - "Find all open reading frames in ATGAAATTTCCCGGGAAATTT"
+   - "Find gene info for ALKBH1"
+   - "Translate ALKBH1 gene"
+   - "Convert this DNA to RNA: ATGCCC"
+   - "Find ALKBH1 gene then BLAST it"
 3. Click **"🚀 Analyze"**
 4. Results appear below, you can download them
+
+### Multi-Step Queries
+Chain multiple operations together using "then" or "and then":
+- "Find gene ALKBH1, then calculate its GC content"
+- "Get transcript sequence for TP53 and then BLAST it"
+- "Translate BRCA1 then find restriction sites"
 
 ### Method 2: Manual Tool Selection
 1. Go to the **"🔧 Manual Tool Selection"** tab
@@ -99,16 +112,22 @@ The app will open at `http://localhost:8501`
 
 ## Available Tools
 
-| Tool | Description | Input |
-|------|-------------|-------|
-| **translate** | Translate DNA to protein | DNA sequence, reading frame (1-3) |
-| **reverse** | Reverse complement DNA | DNA sequence |
-| **orf** | Find open reading frames | DNA sequence, min size |
-| **align** | Needleman-Wunsch alignment | Two sequences |
-| **restriction** | Find restriction sites | DNA sequence, enzyme (optional) |
-| **shuffle** | Randomize sequence | Sequence |
-| **info** | Get sequence statistics | Sequence |
-| **sixframe** | All 6 translation frames | DNA sequence |
+| Tool | Description | Input | Example Query |
+|------|-------------|-------|---------------|
+| **translate** | Translate DNA to protein | DNA sequence or gene name, reading frame (1-3) | "Translate ALKBH1" |
+| **reverse** | Reverse complement DNA | DNA sequence | "Reverse complement ATGC" |
+| **orf** | Find open reading frames | DNA sequence, min size | "Find ORFs in ATGCCC" |
+| **align** | Needleman-Wunsch alignment | Two sequences | "Align ATGC and ATGG" |
+| **restriction** | Find restriction sites | DNA sequence, enzyme (optional) | "Find restriction sites in ATGC" |
+| **shuffle** | Randomize sequence | Sequence | "Shuffle ATGC" |
+| **info** | Get sequence statistics | Sequence | "Get info for ATGC" |
+| **sixframe** | All 6 translation frames | DNA sequence | "Six frame translate ATGC" |
+| **gene_query** | Get gene information from Ensembl | Gene symbol (e.g., ALKBH1) | "Find gene info for TP53" |
+| **blast** | Run NCBI BLAST search | DNA/protein sequence or gene name | "BLAST this sequence: ATGC" |
+| **dna_to_rna** | Convert DNA to RNA (T→U) | DNA sequence | "Convert ATGC to RNA" |
+| **rna_to_dna** | Convert RNA to DNA (U→T) | RNA sequence | "Convert AUGC to DNA" |
+
+**Plus 250+ additional EMBOSS tools** available through dynamic discovery!
 
 ## Project Structure
 
@@ -125,13 +144,9 @@ bme110/
 │   ├── test_genome_query.py   # Genome analysis tests
 │   └── test_nlp_gene.py       # NLP gene recognition tests
 ├── docs/
-│   ├── README.md              # Main documentation
-│   ├── ARCHITECTURE.md        # System design & diagrams
-│   ├── GETTING_STARTED.md     # Setup & installation guide
-│   ├── CONFIGURATION.md       # Configuration options
-│   ├── PROJECT_SUMMARY.md     # Project overview
-│   ├── NEXT_STEPS.md          # Future improvements
-│   └── GITHUB_SETUP.md        # GitHub setup instructions
+│   ├── ARCHITECTURE.md        # System design & diagrams (9 Mermaid diagrams)
+│   ├── GETTING_STARTED.md     # Complete setup & installation guide
+│   └── CONFIGURATION.md       # Configuration & troubleshooting
 ├── run.sh                     # Start script (Linux/macOS)
 ├── run.bat                    # Start script (Windows)
 ├── setup.sh                   # Environment setup script
@@ -144,11 +159,21 @@ bme110/
 
 ## How It Works
 
-1. **User Input** → Streamlit UI collects natural language query
-2. **NLP Processing** → Ollama LLM interprets the query and selects appropriate tool
-3. **Parameter Extraction** → LLM extracts sequence data and parameters from query
-4. **EMBOSS Execution** → EMBOSSWrapper runs the selected EMBOSS tool
-5. **Results Display** → Streamlit displays formatted results with download option
+1. **User Input** → Streamlit UI collects natural language query or gene symbol
+2. **NLP Processing** → Ollama LLM interprets the query and selects appropriate tool(s)
+3. **Parameter Extraction** → LLM extracts sequence data, gene names, and parameters from query
+4. **Gene Resolution** (if applicable) → Ensembl API fetches gene/transcript information
+5. **EMBOSS Execution** → EMBOSSWrapper runs the selected EMBOSS tool(s) or BLAST
+6. **Multi-Step Chaining** (if applicable) → Automatically chains results between steps
+7. **Results Display** → Streamlit displays formatted results with download option
+
+### Key Components
+
+- **258+ EMBOSS Tools**: Dynamically discovered bioinformatics tools
+- **Ensembl Integration**: Query genes by symbol, get transcript sequences
+- **BioPython BLAST**: Remote NCBI BLAST searches (Bio.Blast.NCBIWWW, Bio.Blast.NCBIXML)
+- **Multi-Step Execution**: Chain operations with automatic result passing
+- **Smart Parameter Handling**: Automatically fetches sequences when gene names are provided
 
 ## System Requirements
 
@@ -161,28 +186,48 @@ bme110/
 ## Architecture
 
 ```
-┌─────────────────────────────────────────┐
-│     Streamlit Web Interface (app.py)    │
-├─────────────────────────────────────────┤
-│                                         │
-│  ┌──────────────────┐  ┌──────────────┐ │
-│  │  NLP Handler     │  │ EMBOSS       │ │
-│  │  (nlp_handler)   │  │ Wrapper      │ │
-│  │                  │  │ (emboss_     │ │
-│  │  • Query Parse   │  │  wrapper)    │ │
-│  │  • Tool Select   │  │              │ │
-│  │  • Param Extract │  │ • translate  │ │
-│  └────────┬─────────┘  │ • reverse    │ │
-│           │            │ • orf        │ │
-│           │            │ • align      │ │
-│           └────┬──────►│ • ... etc    │ │
-│                │       └────┬─────────┘ │
-└────────────────┼────────────┼───────────┘
-                 │            │
-        ┌────────▼─────┐ ┌────▼──────┐
-        │    Ollama    │ │  EMBOSS   │
-        │ (AI Model)   │ │  Tools    │
-        └──────────────┘ └───────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│          Streamlit Web Interface (src/app.py)                   │
+│                     5 Tabs: NLP | Manual | Genome | Batch | Docs│
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌──────────────────────┐  ┌─────────────────────────────────┐ │
+│  │  NLP Handler         │  │ EMBOSS Wrapper                  │ │
+│  │  (nlp_handler.py)    │  │ (emboss_wrapper.py)             │ │
+│  │                      │  │                                 │ │
+│  │  • Query Parsing     │  │ • 258+ EMBOSS tools             │ │
+│  │  • Tool Selection    │  │ • Gene query (Ensembl)          │ │
+│  │  • Multi-Step        │  │ • BLAST integration             │ │
+│  │  • Param Extract     │  │ • DNA/RNA conversion            │ │
+│  └────────┬─────────────┘  │ • Multi-step execution          │ │
+│           │                │ • Smart parameter chaining      │ │
+│           └────┬──────────►└────┬────────────────────────────┘ │
+└────────────────┼───────────────┼──────────────────────────────┘
+                 │               │
+        ┌────────▼─────┐  ┌──────▼────────────┐
+        │   Ollama     │  │  External APIs    │
+        │ (gemma3:4b)  │  │  • EMBOSS tools   │
+        │              │  │  • Ensembl API    │
+        │ • LLM magic  │  │  • NCBI BLAST     │
+        └──────────────┘  │  • BioPython      │
+                          └───────────────────┘
+```
+
+### Data Flow Example: Gene-Based BLAST
+```
+User: "Find ALKBH1 gene then BLAST it"
+  ↓
+NLP Handler: Detects multi-step query
+  Step 1: gene_query (gene_name: ALKBH1)
+  Step 2: blast (sequence: from_previous_step)
+  ↓
+EMBOSS Wrapper:
+  1. Queries Ensembl for ALKBH1 → gets transcript ID
+  2. Fetches transcript sequence → 2597 bp
+  3. Passes sequence to BLAST → NCBI remote search
+  4. Parses BLAST XML results → top alignments
+  ↓
+Display: Formatted BLAST results with download option
 ```
 
 ## Troubleshooting

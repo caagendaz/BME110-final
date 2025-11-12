@@ -32,50 +32,55 @@ The AI (Ollama LLM) understands and runs the right tool automatically.
 
 ## What We Built
 
-### ✅ 4 Core Components
+### ✅ Core Components
 
-#### 1. **EMBOSS Wrapper** (`emboss_wrapper.py` - 450+ lines)
-Provides Python interface to EMBOSS bioinformatics tools:
-- 13+ tools wrapped and tested
-- Natural language mapping
-- Automatic file handling
-- Result parsing
+#### 1. **EMBOSS Wrapper** (`src/emboss_wrapper.py` - 1334 lines)
+Comprehensive Python interface to bioinformatics tools:
+- **258+ EMBOSS tools** dynamically discovered
+- **Gene-based operations** with Ensembl API integration
+- **BLAST integration** via BioPython (NCBI remote searches)
+- **Multi-step execution** with automatic result chaining
+- **DNA/RNA conversion** (T↔U)
+- Smart parameter handling and sequence fetching
 
-**Tools included:**
-- Translate DNA → Protein
+**Key Features:**
+- Translate DNA → Protein (with gene name support)
 - Reverse & Complement DNA
 - Find Open Reading Frames (ORFs)
 - Global Sequence Alignment
 - Restriction Site Finding
-- Sequence Randomization
-- Sequence Statistics
-- 6-Frame Translation
-- Pattern Matching
-- Palindrome Finding
+- Gene queries (Ensembl API)
+- BLAST searches (NCBI)
+- Multi-step workflows
+- And 250+ more EMBOSS tools!
 
-#### 2. **NLP Handler** (`nlp_handler.py` - 300+ lines)
-Converts natural language to tool commands:
+#### 2. **NLP Handler** (`src/nlp_handler.py` - 402 lines)
+Converts natural language to bioinformatics operations:
 - Ollama integration for local AI
+- **Multi-step query support** (chain operations with "then")
 - JSON-based tool selection
-- Parameter extraction
+- Parameter extraction from natural language
+- **Gene name recognition** (ALKBH1, TP53, BRCA1, etc.)
+- Smart disambiguation (e.g., "translate to RNA" vs "translate to protein")
 - Sequence validation
-- Smart suggestions
 
-#### 3. **Web Interface** (`app.py` - 510+ lines)
-Beautiful Streamlit application with:
-- Natural language query interface (AI-powered)
-- Manual tool selection (user-driven)
-- Batch analysis (FASTA file upload)
-- Documentation & examples
-- Real-time results
+#### 3. **Web Interface** (`src/app.py` - 540 lines)
+Beautiful Streamlit application with **5 integrated tabs**:
+- **Natural language query interface** (AI-powered with multi-step support)
+- **Manual tool selection** (user-driven)
+- **Genome browser query** (genomic regions)
+- **Batch analysis** (FASTA file upload)
+- **Documentation & examples**
+- Real-time results with formatted output
 - Download functionality
+- Multi-step workflow visualization
 
-#### 4. **Documentation & Setup** (1000+ lines)
-- README (comprehensive guide)
-- Setup scripts (automated for all platforms)
-- GitHub setup guide
-- Configuration guide
-- Project summary
+#### 4. **Comprehensive Testing** (`tests/` directory)
+- End-to-end integration tests
+- Gene query tests
+- Direct gene lookup tests
+- Genome analysis tests
+- NLP gene recognition tests
 
 ---
 
@@ -84,20 +89,27 @@ Beautiful Streamlit application with:
 ```
 bme110/
 │
-├── CORE APPLICATION FILES
-│   ├── app.py                 # Main Streamlit web app
-│   ├── emboss_wrapper.py      # EMBOSS bioinformatics wrapper
+├── CORE APPLICATION FILES (src/)
+│   ├── app.py                 # Main Streamlit web app (5 tabs)
+│   ├── emboss_wrapper.py      # Bioinformatics engine (258+ tools)
 │   └── nlp_handler.py         # NLP + Ollama integration
 │
-├── DOCUMENTATION
-│   ├── README.md              # User guide & feature overview
-│   ├── PROJECT_SUMMARY.md     # Detailed project status
-│   ├── GITHUB_SETUP.md        # GitHub deployment steps
-│   ├── CONFIGURATION.md       # Advanced configuration guide
-│   └── project_requirements.md # Original project requirements
+├── TESTING SUITE (tests/)
+│   ├── test_e2e.py            # End-to-end integration tests
+│   ├── test_gene_query.py     # Gene query tests
+│   ├── test_gene_direct.py    # Direct gene lookup tests
+│   ├── test_genome_query.py   # Genome analysis tests
+│   └── test_nlp_gene.py       # NLP gene recognition tests
+│
+├── DOCUMENTATION (docs/)
+│   ├── GETTING_STARTED.md     # This file - complete setup guide
+│   ├── CONFIGURATION.md       # Configuration & troubleshooting
+│   └── ARCHITECTURE.md        # System design (9 Mermaid diagrams)
 │
 ├── SETUP & DEPENDENCIES
 │   ├── requirements.txt       # Python package versions
+│   ├── run.sh                 # Start script (Linux/macOS)
+│   ├── run.bat                # Start script (Windows)
 │   ├── setup.sh               # Linux/macOS automated setup
 │   └── setup_windows.ps1      # Windows PowerShell setup
 │
@@ -191,18 +203,31 @@ Shows results: "MKF PG" (protein sequence)
 - "Align ATGAAA with ATGCCC"
 - "Give me info about this sequence: ATGAAATTTCCCGGG"
 - "Show all 6 reading frames for ATGAAATTTCCCGGGAAATTTAAAGGG"
+- **"Find gene info for ALKBH1"** (Gene queries!)
+- **"Translate ALKBH1 gene"** (Gene-based operations!)
+- **"Convert this DNA to RNA: ATGCCC"** (DNA/RNA conversion!)
+- **"Find ALKBH1 gene then BLAST it"** (Multi-step workflows!)
 
 ### Interface Tab 2: Manual Tool Selection
 
 1. Choose a tool from dropdown
-2. Paste your sequence(s)
+2. Paste your sequence(s) **or enter a gene name**
 3. Adjust parameters if needed
 4. Click the tool button
 5. Results appear below
 
 **Good for:** When you know exactly which tool you need
 
-### Interface Tab 3: Batch Analysis
+### Interface Tab 3: Genome Browser Query
+
+1. Enter genomic coordinates (e.g., chr1:1000-2000)
+2. Select genome assembly (hg38, hg19, etc.)
+3. Query UCSC Genome Browser API
+4. Get region information
+
+**Good for:** Exploring genomic regions
+
+### Interface Tab 4: Batch Analysis
 
 1. Upload a FASTA file
 2. Analyze multiple sequences at once
@@ -210,7 +235,7 @@ Shows results: "MKF PG" (protein sequence)
 
 **Good for:** Processing multiple sequences together
 
-### Interface Tab 4: Documentation
+### Interface Tab 5: Documentation
 
 - Complete feature overview
 - Example queries
@@ -221,71 +246,85 @@ Shows results: "MKF PG" (protein sequence)
 
 ## GitHub Deployment
 
-### Step 1: Initialize Git
+### Repository Already Set Up! ✅
+
+This project is already on GitHub at:
+**https://github.com/caagendaz/BME110-final**
+
+The repository includes:
+- ✅ All source code in `src/` directory
+- ✅ Complete test suite in `tests/` directory
+- ✅ Documentation in `docs/` directory
+- ✅ Setup scripts (`run.sh`, `run.bat`)
+- ✅ Requirements and configuration files
+
+### To Clone and Use:
 
 ```bash
-cd /mnt/c/Users/cagns/OneDrive/Desktop/bme110
+# Clone the repository
+git clone https://github.com/caagendaz/BME110-final.git
+cd BME110-final
 
-git init
-git config user.name "Your Name"
-git config user.email "your.email@ucsc.edu"
+# Follow setup instructions in README.md
+conda create -n bioquery python=3.9 -y
+conda activate bioquery
+conda install -c bioconda emboss biopython -y
+conda install -c conda-forge streamlit pandas -y
+pip install ollama
+
+# Run the application
+./run.sh  # Linux/macOS
+# or
+run.bat   # Windows
 ```
-
-### Step 2: Add Files
-
-```bash
-git add .
-git status  # Review files
-git commit -m "Initial commit: BioQuery Local project"
-```
-
-### Step 3: Create GitHub Repository
-
-1. Go to https://github.com/new
-2. Create repository `bioquery-local`
-3. DON'T initialize with README (we have one)
-4. Copy the commands shown
-
-### Step 4: Connect & Push
-
-```bash
-git branch -M main
-git remote add origin https://github.com/YOUR_USERNAME/bioquery-local.git
-git push -u origin main
-```
-
-### Step 5: Verify
-
-Check GitHub repo to confirm all files uploaded properly.
 
 ---
 
 ## Next Steps
 
-### Immediate Tasks
-
-- [ ] Test the app thoroughly
-- [ ] Try all example queries
-- [ ] Initialize GitHub repository
-- [ ] Push to GitHub
-
 ### For Demonstration
 
-- [ ] Run the app during demo
-- [ ] Show natural language queries working
-- [ ] Display different tool outputs
-- [ ] Explain the architecture
+- [x] ✅ App fully functional with 258+ tools
+- [x] ✅ Natural language queries working
+- [x] ✅ Gene-based operations (ALKBH1, TP53, etc.)
+- [x] ✅ BLAST integration (NCBI remote)
+- [x] ✅ Multi-step workflows
+- [x] ✅ DNA/RNA conversion
+- [x] ✅ Repository organized and on GitHub
 
-### Future Enhancements
+**Demo Examples to Show:**
+1. Simple query: "Translate this DNA: ATGAAATTT"
+2. Gene query: "Find gene info for ALKBH1"
+3. Gene-based tool: "Translate TP53 gene"
+4. Multi-step: "Find ALKBH1 then BLAST it"
+5. DNA/RNA conversion: "Convert ATGCCC to RNA"
 
-1. **Batch Processing** (Week 2)
-   - Multi-file analysis
-   - Pipeline creation
-   - Results comparison
+### Current Features ✅
 
-2. **Visualization** (Week 3)
-   - Sequence plots
-   - Alignment visualization
+1. **258+ EMBOSS Tools** - All discovered dynamically
+2. **Gene Queries** - Ensembl API integration
+3. **BLAST Integration** - Remote NCBI searches via BioPython
+4. **Multi-Step Workflows** - Chain operations with automatic result passing
+5. **DNA/RNA Conversion** - Simple T↔U conversion
+6. **Smart NLP** - Handles gene names, ambiguous queries, multi-step commands
+7. **5-Tab Interface** - NLP, Manual, Genome, Batch, Documentation
+
+### Future Enhancements (Optional)
+
+1. **Enhanced Visualization**
+   - Sequence alignment plots
+   - Gene structure diagrams
+   - BLAST hit visualization
+
+2. **Additional Data Sources**
+   - UniProt protein data
+   - PDB structure information
+   - More genome assemblies
+
+3. **Advanced Features**
+   - Custom pipelines
+   - Result comparison tools
+   - Export to different formats
    - GC content graphs
 
 3. **Advanced Features** (Week 4+)
