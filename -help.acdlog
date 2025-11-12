@@ -1,7 +1,0 @@
-testing acdpromptsacdArgsScan -help argv[0]
-acdArgsScan acdDebug No acdDoHelp Yes
-Trying acdfile '/home/cagns/miniconda3/envs/bioquery/share/EMBOSS/acd/-help.acd' (installed)
-acdfile '/home/cagns/miniconda3/envs/bioquery/share/EMBOSS/acd/-help.acd' not opened
-acdfile '/home/cagns/miniconda3/envs/bioquery/share/EMBOSS/acd/-help.acd' not opened
-Trying acdfile '/opt/conda/conda-bld/emboss_1758847823739/work/emboss/acd/-help.acd' (original main source)
-acdfile '/opt/conda/conda-bld/emboss_1758847823739/work/emboss/acd/-help.acd' not opened

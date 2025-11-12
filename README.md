@@ -60,9 +60,21 @@ ollama pull gemma3:4b
 
 ### 4. Run the App
 
+**Linux/macOS:**
 ```bash
 conda activate bioquery
-streamlit run app.py
+./run.sh
+```
+
+**Windows:**
+```bash
+conda activate bioquery
+run.bat
+```
+
+Or manually:
+```bash
+streamlit run src/app.py
 ```
 
 The app will open at `http://localhost:8501`
@@ -102,11 +114,32 @@ The app will open at `http://localhost:8501`
 
 ```
 bme110/
-├── app.py                 # Main Streamlit application
-├── emboss_wrapper.py      # EMBOSS tool wrapper
-├── nlp_handler.py         # Natural language processing handler
-├── README.md              # This file
-└── requirements.txt       # Python dependencies (optional)
+├── src/
+│   ├── app.py                 # Main Streamlit application
+│   ├── emboss_wrapper.py      # EMBOSS tool wrapper & bioinformatics engine
+│   └── nlp_handler.py         # Natural language processing handler
+├── tests/
+│   ├── test_e2e.py            # End-to-end integration tests
+│   ├── test_gene_query.py     # Gene query tests
+│   ├── test_gene_direct.py    # Direct gene lookup tests
+│   ├── test_genome_query.py   # Genome analysis tests
+│   └── test_nlp_gene.py       # NLP gene recognition tests
+├── docs/
+│   ├── README.md              # Main documentation
+│   ├── ARCHITECTURE.md        # System design & diagrams
+│   ├── GETTING_STARTED.md     # Setup & installation guide
+│   ├── CONFIGURATION.md       # Configuration options
+│   ├── PROJECT_SUMMARY.md     # Project overview
+│   ├── NEXT_STEPS.md          # Future improvements
+│   └── GITHUB_SETUP.md        # GitHub setup instructions
+├── run.sh                     # Start script (Linux/macOS)
+├── run.bat                    # Start script (Windows)
+├── setup.sh                   # Environment setup script
+├── setup_windows.ps1          # Environment setup script (Windows)
+├── requirements.txt           # Python dependencies
+├── LICENSE                    # Project license
+├── .gitignore                 # Git ignore rules
+└── README.md                  # This file
 ```
 
 ## How It Works
