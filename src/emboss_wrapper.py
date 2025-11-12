@@ -234,6 +234,40 @@ class EMBOSSWrapper:
         except Exception as e:
             return f"Error during reverse complement: {str(e)}"
     
+    def dna_to_rna(self, sequence: str) -> str:
+        """Convert DNA sequence to RNA (T → U substitution)
+        
+        Args:
+            sequence: DNA sequence string
+        
+        Returns:
+            str: RNA sequence (with U instead of T)
+        """
+        try:
+            # Simple string replacement is most efficient for T→U
+            # But we can also use biosed if needed for more complex replacements
+            rna_sequence = sequence.upper().replace('T', 'U')
+            return f">rna_sequence\n{rna_sequence}\n"
+        
+        except Exception as e:
+            return f"Error during DNA to RNA conversion: {str(e)}"
+    
+    def rna_to_dna(self, sequence: str) -> str:
+        """Convert RNA sequence to DNA (U → T substitution)
+        
+        Args:
+            sequence: RNA sequence string
+        
+        Returns:
+            str: DNA sequence (with T instead of U)
+        """
+        try:
+            dna_sequence = sequence.upper().replace('U', 'T')
+            return f">dna_sequence\n{dna_sequence}\n"
+        
+        except Exception as e:
+            return f"Error during RNA to DNA conversion: {str(e)}"
+    
     def find_orfs(self, sequence: str, min_size: int = 100) -> str:
         """Find open reading frames in a sequence
         
@@ -989,6 +1023,10 @@ Keep it conversational and friendly."""
             return result
         elif emboss_name == 'revseq':
             return self.reverse_complement(kwargs.get('sequence', ''))
+        elif emboss_name in ['dna_to_rna', 'dna2rna', 'torna', 'rna']:
+            return self.dna_to_rna(kwargs.get('sequence', ''))
+        elif emboss_name in ['rna_to_dna', 'rna2dna', 'todna']:
+            return self.rna_to_dna(kwargs.get('sequence', ''))
         elif emboss_name == 'getorf':
             return self.find_orfs(kwargs.get('sequence', ''), kwargs.get('min_size', 100))
         elif emboss_name == 'infoseq':

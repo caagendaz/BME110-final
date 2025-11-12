@@ -48,6 +48,8 @@ IMPORTANT: When a user mentions a GENE SYMBOL (like ALKBH1, TP53, BRCA1), use th
 
 EMBOSS tools (use 'gene_name' for gene symbols, 'sequence' for raw DNA/protein sequences):
 - translate: Translate DNA to protein. Needs "gene_name" OR "sequence", optional "frame" (1-3) and "transcript_variant" (e.g., "transcript variant 5")
+- dna_to_rna: Convert DNA to RNA (T → U). Needs "gene_name" OR "sequence". Use when user says "convert to RNA", "make RNA", "transcribe", "DNA to RNA"
+- rna_to_dna: Convert RNA to DNA (U → T). Needs "sequence". Use when user says "convert to DNA", "RNA to DNA"
 - reverse: Reverse complement DNA. Needs "gene_name" OR "sequence"
 - orf: Find open reading frames. Needs "gene_name" OR "sequence" and optional "min_size"
 - align: Align two sequences. Needs "seq1" and "seq2"
