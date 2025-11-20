@@ -156,8 +156,97 @@ def main():
                     success, result = nlp.parse_user_query(user_query)
                     
                     if success:
+                        # Check if this is multiple unrelated questions
+                        if result.get('type') == 'multiple_questions':
+                            # Handle multiple questions
+                            st.markdown('<div class="tool-box">', unsafe_allow_html=True)
+                            st.write(f"**Detected {result['total']} questions**")
+                            st.markdown('</div>', unsafe_allow_html=True)
+                            
+                            # Process each question
+                            for q_result in result['questions']:
+                                q_num = q_result['question_number']
+                                q_text = q_result['question_text']
+                                
+                                st.markdown(f"### Question {q_num}")
+                                st.info(f"**Q{q_num}:** {q_text}")
+                                
+                                if not q_result.get('success'):
+                                    st.error(f"Failed to parse: {q_result.get('error')}")
+                                    continue
+                                
+                                parsed = q_result['parsed']
+                                
+                                # Handle multi-step for this question
+                                if 'steps' in parsed:
+                                    with st.expander(f"Q{q_num} - Multi-step workflow", expanded=True):
+                                        st.write(f"**Workflow:** {parsed.get('explanation', 'N/A')}")
+                                        
+                                        use_prev = parsed.get('use_previous_result', False)
+                                        success_multi, results = emboss.execute_multi_step(
+                                            parsed['steps'],
+                                            use_previous_result=use_prev
+                                        )
+                                        
+                                        if success_multi:
+                                            formatted_output = emboss.format_multi_step_results(
+                                                results,
+                                                explanation=parsed.get('explanation', '')
+                                            )
+                                            st.code(formatted_output, language="text")
+                                        else:
+                                            st.error("Some steps failed")
+                                            for r in results:
+                                                if not r.get('success'):
+                                                    st.write(f"Step {r.get('step')}: {r.get('error')}")
+                                
+                                # Handle single-step for this question
+                                else:
+                                    tool_name = parsed.get('tool')
+                                    parameters = parsed.get('parameters', {})
+                                    
+                                    with st.expander(f"Q{q_num} - {tool_name}", expanded=True):
+                                        st.write(f"**Tool:** {tool_name}")
+                                        st.write(f"**Explanation:** {parsed.get('explanation', '')}")
+                                        
+                                        # Execute tool
+                                        try:
+                                            if tool_name == 'genome_query':
+                                                analysis_result = emboss.query_ucsc_genome(
+                                                    parameters.get('genome', ''),
+                                                    parameters.get('chrom', ''),
+                                                    int(parameters.get('start', 0)),
+                                                    int(parameters.get('end', 0))
+                                                )
+                                            elif tool_name == 'gene_query':
+                                                analysis_result = emboss.query_gene_info(
+                                                    parameters.get('gene_name', ''),
+                                                    parameters.get('genome', 'hg38'),
+                                                    parameters.get('track', 'gencode')
+                                                )
+                                            else:
+                                                analysis_result = emboss.run_tool(tool_name, **parameters)
+                                            
+                                            st.code(analysis_result, language="text")
+                                        except Exception as e:
+                                            st.error(f"Error: {str(e)}")
+                                
+                                st.markdown("---")
+                            
+                            # Overall download button
+                            all_results = "\n\n".join([
+                                f"=== Question {q['question_number']} ===\n{q['question_text']}\n\n[Results would go here]"
+                                for q in result['questions']
+                            ])
+                            st.download_button(
+                                label="📥 Download All Results",
+                                data=all_results,
+                                file_name="multiple_questions_results.txt",
+                                mime="text/plain"
+                            )
+                        
                         # Check if this is a multi-step query
-                        if 'steps' in result:
+                        elif 'steps' in result:
                             # Multi-step query
                             st.markdown('<div class="tool-box">', unsafe_allow_html=True)
                             st.write(f"**Multi-Step Workflow:** {result.get('explanation', 'N/A')}")

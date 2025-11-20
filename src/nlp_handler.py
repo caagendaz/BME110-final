@@ -123,16 +123,146 @@ Examples:
 
 Always respond with ONLY valid JSON, no other text. Start with { and end with }"""
 
+    def _split_numbered_questions(self, query: str) -> list:
+        """Split a query into numbered questions if present
+        
+        Detects patterns like:
+        1. Question one
+        2. Question two
+        
+        or
+        
+        Question 1: Text
+        Question 2: Text
+        
+        Args:
+            query: Full query text
+        
+        Returns:
+            List of individual questions (empty list if no numbering detected)
+        """
+        import re
+        
+        # Pattern 1: "1.", "2.", etc. at start of lines
+        pattern1 = r'^\s*\d+[\.)]\s+'
+        
+        # Pattern 2: "Question 1:", "Q1:", etc.
+        pattern2 = r'^\s*[Qq](?:uestion)?\s*\d+\s*:\s*'
+        
+        lines = query.split('\n')
+        questions = []
+        current_question = []
+        
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+                
+            # Check if this line starts a new question
+            if re.match(pattern1, line) or re.match(pattern2, line):
+                # Save previous question if exists
+                if current_question:
+                    questions.append(' '.join(current_question))
+                # Start new question (remove number prefix)
+                clean_line = re.sub(pattern1, '', line)
+                clean_line = re.sub(pattern2, '', clean_line)
+                current_question = [clean_line]
+            else:
+                # Continue current question
+                current_question.append(line)
+        
+        # Add last question
+        if current_question:
+            questions.append(' '.join(current_question))
+        
+        # Only return questions if we found multiple
+        return questions if len(questions) > 1 else []
+
+    def _parse_multiple_questions(self, questions: list) -> Tuple[bool, Dict]:
+        """Parse multiple unrelated questions independently
+        
+        Args:
+            questions: List of question strings
+        
+        Returns:
+            Tuple of (success: bool, result dict with 'questions' list)
+        """
+        results = []
+        
+        for i, question in enumerate(questions, 1):
+            try:
+                # Parse each question independently
+                full_prompt = f"{self.system_prompt}\n\nUser query: {question}\n\nRespond with JSON only:"
+                
+                response = self.model.generate_content(
+                    full_prompt,
+                    generation_config=genai.types.GenerationConfig(
+                        temperature=0.1,
+                        max_output_tokens=1024,
+                    )
+                )
+                
+                response_text = response.text.strip()
+                
+                # Clean markdown
+                if response_text.startswith('```'):
+                    response_text = response_text.split('```')[1]
+                    if response_text.startswith('json'):
+                        response_text = response_text[4:]
+                if response_text.endswith('```'):
+                    response_text = response_text[:-3]
+                
+                response_text = response_text.strip()
+                parsed = json.loads(response_text)
+                
+                # Clean up multi-step parameters if needed
+                if 'steps' in parsed:
+                    parsed['steps'] = self._cleanup_multistep_parameters(parsed['steps'])
+                
+                results.append({
+                    'question_number': i,
+                    'question_text': question,
+                    'parsed': parsed,
+                    'success': True
+                })
+                
+            except Exception as e:
+                results.append({
+                    'question_number': i,
+                    'question_text': question,
+                    'error': str(e),
+                    'success': False
+                })
+        
+        return True, {
+            'type': 'multiple_questions',
+            'questions': results,
+            'total': len(questions)
+        }
+
     def parse_user_query(self, query: str) -> Tuple[bool, Dict]:
         """Parse a user query and extract tool information
+        
+        Supports:
+        - Single queries: "Translate SOCS3"
+        - Multi-step queries: "Find SOCS3 then translate it"
+        - Multiple unrelated questions: "1. What is SOCS3? 2. Translate ALKBH1"
         
         Args:
             query: User's natural language query
         
         Returns:
-            Tuple of (success: bool, result: dict with tool, parameters, explanation OR steps, explanation)
+            Tuple of (success: bool, result: dict with tool, parameters, explanation OR steps, explanation OR questions list)
         """
         try:
+            # Check if this is a multi-question query (numbered questions)
+            questions = self._split_numbered_questions(query)
+            
+            if len(questions) > 1:
+                # Handle multiple unrelated questions
+                return self._parse_multiple_questions(questions)
+            
+            # Single query or multi-step workflow - process normally
             # Create the full prompt with system instructions
             full_prompt = f"{self.system_prompt}\n\nUser query: {query}\n\nRespond with JSON only:"
             
