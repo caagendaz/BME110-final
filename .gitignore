@@ -41,6 +41,9 @@ env/
 .streamlit/
 .streamlit.toml
 
+# Environment variables (API keys)
+.env
+
 # Temporary files
 *.tmp
 *.temp
