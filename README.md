@@ -28,13 +28,17 @@ A Streamlit web application that uses natural language AI (Google Gemini) to con
 conda create -n bioquery python=3.12 -y
 conda activate bioquery
 
-# Install bioinformatics tools
-conda install -c bioconda emboss bedtools -y
+# Install core packages first (conda-forge)
 conda install -c conda-forge streamlit pandas -y
 
-# Install Python packages
+# Then install bioinformatics tools (bioconda)
+conda install -c bioconda emboss bedtools -y
+
+# Install Python API packages
 pip install biopython google-generativeai requests
 ```
+
+**Note**: Installing conda-forge packages before bioconda avoids dependency conflicts.
 
 ### 2. Get Google Gemini API Key
 
@@ -181,10 +185,10 @@ bme110/
 ## How It Works
 
 1. **User Input** → Streamlit UI collects natural language query or gene symbol
-2. **NLP Processing** → Ollama LLM interprets the query and selects appropriate tool(s)
-3. **Parameter Extraction** → LLM extracts sequence data, gene names, and parameters from query
+2. **NLP Processing** → Google Gemini API (gemini-2.5-flash) interprets the query and selects appropriate tool(s)
+3. **Parameter Extraction** → Gemini extracts sequence data, gene names, and parameters from query
 4. **Gene Resolution** (if applicable) → Ensembl API fetches gene/transcript information
-5. **EMBOSS Execution** → EMBOSSWrapper runs the selected EMBOSS tool(s) or BLAST
+5. **Tool Execution** → EMBOSSWrapper runs EMBOSS tools, BLAST, BEDTools, or other APIs
 6. **Multi-Step Chaining** (if applicable) → Automatically chains results between steps
 7. **Results Display** → Streamlit displays formatted results with download option
 
@@ -199,17 +203,17 @@ bme110/
 ## System Requirements
 
 - **OS**: Windows (WSL2), macOS, or Linux
-- **Python**: 3.9+
-- **RAM**: 4GB minimum (for model loading)
-- **Disk**: 5GB (for models and EMBOSS tools)
-- **Internet**: For initial model download
+- **Python**: 3.12+ (tested on 3.12.12)
+- **RAM**: 2GB minimum
+- **Disk**: 2GB (for EMBOSS tools and packages)
+- **Internet**: Required for Google Gemini API, NCBI BLAST, Ensembl, GTEx, UCSC APIs
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │          Streamlit Web Interface (src/app.py)                   │
-│                     5 Tabs: NLP | Manual | Genome | Batch | Docs│
+│              4 Tabs: NLP | Manual | Genome | Documentation      │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  ┌──────────────────────┐  ┌─────────────────────────────────┐ │
@@ -218,47 +222,62 @@ bme110/
 │  │                      │  │                                 │ │
 │  │  • Query Parsing     │  │ • 258+ EMBOSS tools             │ │
 │  │  • Tool Selection    │  │ • Gene query (Ensembl)          │ │
-│  │  • Multi-Step        │  │ • BLAST integration             │ │
-│  │  • Param Extract     │  │ • DNA/RNA conversion            │ │
-│  └────────┬─────────────┘  │ • Multi-step execution          │ │
-│           │                │ • Smart parameter chaining      │ │
+│  │  • Multi-Question    │  │ • BLAST integration (BioPython) │ │
+│  │  • Multi-Step        │  │ • BLAT search (UCSC)            │ │
+│  │  • Param Extract     │  │ • BEDTools (genomic overlaps)   │ │
+│  └────────┬─────────────┘  │ • GTEx expression links         │ │
+│           │                │ • DNA/RNA conversion            │ │
+│           │                │ • Protein analysis (pepstats)   │ │
 │           └────┬──────────►└────┬────────────────────────────┘ │
 └────────────────┼───────────────┼──────────────────────────────┘
                  │               │
-        ┌────────▼─────┐  ┌──────▼────────────┐
-        │   Ollama     │  │  External APIs    │
-        │ (gemma3:4b)  │  │  • EMBOSS tools   │
-        │              │  │  • Ensembl API    │
-        │ • LLM magic  │  │  • NCBI BLAST     │
-        └──────────────┘  │  • BioPython      │
-                          └───────────────────┘
+        ┌────────▼─────────┐  ┌──▼──────────────────────────┐
+        │  Google Gemini   │  │  External APIs & Tools      │
+        │ gemini-2.5-flash │  │  • EMBOSS (local)           │
+        │                  │  │  • BEDTools (local)         │
+        │ • NLP parsing    │  │  • Ensembl REST API         │
+        │ • Tool routing   │  │  • NCBI BLAST (remote)      │
+        │ • Multi-question │  │  • UCSC Genome Browser API  │
+        └──────────────────┘  │  • GTEx Portal (links)      │
+                              └─────────────────────────────┘
 ```
 
 ### Data Flow Example: Gene-Based BLAST
 ```
 User: "Find ALKBH1 gene then BLAST it"
   ↓
-NLP Handler: Detects multi-step query
+NLP Handler (Gemini API):
+  Detects multi-step query
   Step 1: gene_query (gene_name: ALKBH1)
-  Step 2: blast (sequence: from_previous_step)
+  Step 2: blast (gene_name: ALKBH1) - auto-resolves sequence
   ↓
 EMBOSS Wrapper:
-  1. Queries Ensembl for ALKBH1 → gets transcript ID
-  2. Fetches transcript sequence → 2597 bp
-  3. Passes sequence to BLAST → NCBI remote search
-  4. Parses BLAST XML results → top alignments
+  1. Queries Ensembl REST API for ALKBH1 → gets transcript ID
+  2. Fetches transcript sequence → 2597 bp CDS
+  3. Submits to NCBI BLAST via BioPython → remote search
+  4. Parses BLAST XML results → top alignments with E-values
   ↓
-Display: Formatted BLAST results with download option
+Streamlit Display:
+  Formatted BLAST results with:
+  • Hit descriptions
+  • E-values and bit scores
+  • Identity percentages
+  • Download button for results
 ```
 
 ## Troubleshooting
 
-### Ollama Connection Issues
+### Google API Key Issues
 
-**Error: "Failed to connect to Ollama"**
-- Make sure Ollama is running: `ollama serve` on Windows PowerShell
-- Check the host IP: On WSL2, use `ip route | grep default | awk '{print $3}'`
-- Update `nlp_handler.py` line 13 with correct IP if needed
+**Error: "Google API key required"**
+- Get a free API key from https://ai.google.dev/
+- Set it in your environment: `export GOOGLE_API_KEY='your_key'`
+- Or create a `.env` file with `GOOGLE_API_KEY=your_key`
+
+**Error: "Rate limit exceeded"**
+- Gemini free tier: 10 requests/minute, 1500 requests/day
+- Wait ~60 seconds before retrying
+- For multi-question queries, use smaller batches (3-5 questions at a time)
 
 ### EMBOSS Not Found
 
@@ -268,19 +287,24 @@ conda activate bioquery
 conda install -c bioconda emboss -y
 ```
 
-### Model Too Large
+### BEDTools Not Found
 
-If your model is taking too long to download:
+**Error: "bedtools: command not found"**
 ```bash
-ollama pull phi3:mini  # Smallest model (2GB)
+conda activate bioquery
+conda install -c bioconda bedtools -y
 ```
 
 ## Performance Notes
 
-- **First run**: May be slow while loading model into memory (~1-2 minutes)
-- **Subsequent runs**: Much faster as model stays loaded
+- **NLP queries**: ~1-3 seconds per question (Gemini API)
+- **BLAST searches**: 10-60 seconds (NCBI remote server)
+- **Local EMBOSS tools**: <1 second for most operations
+- **Gene queries**: 1-2 seconds (Ensembl API)
+- **Multi-question mode**: Process N questions in ~N seconds + rate limiting
+- **Rate limits**: Gemini free tier = 10 requests/minute
 - **Sequence size**: Works well with sequences up to 10MB
-- **Alignment**: Large sequence alignment may take time
+- **Alignment**: Large sequence alignment may take additional time
 
 ## Contributing
 
@@ -298,13 +322,17 @@ This is an educational project for BME110 at UCSC.
 
 - [EMBOSS Documentation](http://emboss.open-bio.org/)
 - [BioPython Documentation](https://biopython.org/)
-- [Ollama Documentation](https://ollama.com)
+- [Google Gemini API Documentation](https://ai.google.dev/)
 - [Streamlit Documentation](https://docs.streamlit.io/)
+- [BEDTools Documentation](https://bedtools.readthedocs.io/)
+- [GTEx Portal](https://gtexportal.org/)
+- [UCSC Genome Browser API](https://genome.ucsc.edu/goldenPath/help/api.html)
 
 ---
 
-**Built with:** EMBOSS | BioPython | Ollama | Streamlit
+**Built with:** EMBOSS | BioPython | Google Gemini | Streamlit | BEDTools
 
 **Author:** Cagn Steinbrecher  
 **Course:** BME110  
-**Institution:** UC Santa Cruz
+**Institution:** UC Santa Cruz  
+**Version:** 2.0 (Python 3.12, Gemini 2.5 Flash)

@@ -6,16 +6,24 @@ This document analyzes which BME110 midterm assignment questions can be complete
 
 ### New Tools Added:
 1. **BEDTools Integration** - Find overlaps between genomic regions (BED files)
-2. **BLAT Search** - UCSC BLAT for near-exact genome searches
+2. **BLAT Search** - UCSC BLAT for near-exact genome searches via API
 3. **UCSC Gene Info** - Programmatic access to UCSC Genome Browser data
-4. **GTEx Integration** - Query gene expression across 54 human tissues
-5. **Enhanced EMBOSS Tools** - Explicit support for `cusp`, `pepstats`, `wordcount`
+4. **GTEx Integration** - Query gene expression with portal links to 54 human tissues
+5. **Enhanced EMBOSS Tools** - Explicit support for `cusp`, `pepstats`, `wordcount`, `iep`
+6. **Multi-Question Processing** - Batch process numbered questions independently
+7. **Improved NLP** - Better tool routing for protein analysis (molecular weight, pI, etc.)
 
 ### Updated Components:
-- `src/emboss_wrapper.py` - Added 3 new methods: `bedtools_intersect()`, `blat_search()`, `ucsc_gene_info()`
-- Tool mappings updated to include new keywords
-- `requirements.txt` - Added `requests` library
-- `README.md` - Documented new capabilities
+- `src/emboss_wrapper.py` - Added: `bedtools_intersect()`, `blat_search()`, `ucsc_gene_info()`, `gtex_expression()`, protein analysis tools
+- `src/nlp_handler.py` - Added: multi-question parsing, improved tool descriptions in system prompt, pepstats/iep routing
+- `src/app.py` - Added: multi-question UI with expandable sections per question
+- `tool_map` - Updated: molecular_weight/weight/mass → pepstats, added all new tool keywords
+- `requirements.txt` - Added: `requests==2.32.3` library
+- `README.md` - Updated: Python 3.12, Google Gemini API, all new features documented
+
+### Python Upgrade:
+- **Python 3.9 → 3.12**: ~25% performance improvement, continued security support until Oct 2028
+- **Package upgrades**: BioPython 1.85→1.86, Streamlit 1.48.1→1.51.0, Pandas 2.3.1→2.3.3
 
 ## Assignment Question Coverage
 
@@ -43,8 +51,9 @@ This document analyzes which BME110 midterm assignment questions can be complete
 
 #### Question 8: Protein Statistics
 - **Tool**: `pepstats` (EMBOSS)
-- **Capability**: Calculate molecular weight, pI, amino acid composition
-- **Example**: "Get protein stats for SOCS3"
+- **Capability**: Calculate molecular weight, pI, amino acid composition, charge
+- **Example**: "Calculate molecular weight of MKTAYIAKQRQISFVK" or "Get protein stats for SOCS3"
+- **NLP Routing**: "molecular weight", "MW", "mass", "protein statistics" all route to pepstats
 
 #### Question 9: Oligonucleotide Frequencies
 - **Tool**: `wordcount` (EMBOSS)
@@ -158,12 +167,15 @@ This document analyzes which BME110 midterm assignment questions can be complete
 
 ## Key Strengths After Modifications
 
-1. **EMBOSS Coverage**: All required EMBOSS tools (cusp, pepstats, wordcount, transeq, geecee, getorf, needle, water) now explicitly supported
-2. **BED File Analysis**: BEDTools integration enables SNP/gene overlap analysis
-3. **Search Flexibility**: Both BLAST (sensitive) and BLAT (fast, exact) available
-4. **Gene-Centric Workflow**: Can query genes by name and automatically fetch sequences
-5. **GTEx Integration**: Direct portal links for tissue expression visualization with instructions
+1. **EMBOSS Coverage**: All required EMBOSS tools (cusp, pepstats, wordcount, transeq, geecee, getorf, needle, water, iep) now explicitly supported with proper NLP routing
+2. **BED File Analysis**: BEDTools integration enables SNP/gene overlap analysis programmatically
+3. **Search Flexibility**: Both BLAST (sensitive, distant homologs) and BLAT (fast, near-exact matches) available
+4. **Gene-Centric Workflow**: Query genes by name, automatically fetch sequences, chain operations
+5. **GTEx Integration**: Direct portal links for tissue expression visualization with step-by-step instructions
 6. **Multi-Step Pipelines**: Chain operations together (e.g., "get SOCS3 then calculate codon usage")
+7. **Multi-Question Mode**: Paste entire assignments with numbered questions - each processed independently
+8. **Protein Analysis**: Specialized tools (pepstats, iep) with smart NLP routing for molecular weight, pI, composition
+9. **Python 3.12**: Modern environment with ~25% performance boost and long-term support
 
 ## Limitations and Future Enhancements
 
@@ -185,14 +197,23 @@ This document analyzes which BME110 midterm assignment questions can be complete
 To use all new features:
 
 ```bash
-# Install BEDTools
-conda install -c bioconda bedtools
+# Create Python 3.12 environment
+conda create -n bioquery python=3.12 -y
+conda activate bioquery
 
-# Install requests library
-pip install requests
+# Install core packages first (avoids conflicts)
+conda install -c conda-forge streamlit pandas -y
+
+# Install bioinformatics tools
+conda install -c bioconda emboss bedtools -y
+
+# Install API libraries
+pip install biopython google-generativeai requests
 
 # Verify installation
 bedtools --version
+transeq -version
+python -c "import google.generativeai; print('Gemini API ready')"
 ```
 
 ## Usage Examples
@@ -229,4 +250,13 @@ Returns:
 
 With these modifications, BioQuery NoLocal can now handle **~85-90% of the BME110 assignment programmatically or with guided links**. The main gaps are visual exploration tasks that require manual interaction with genome browsers. For GTEx expression queries, the tool provides direct portal links with clear instructions, making the manual step trivial.
 
-**Recommended Approach**: Use BioQuery NoLocal for all computational analysis (sequence processing, alignments, statistics, BED intersections) and gene info lookups. For GTEx expression, use the provided portal link and follow the instructions. This workflow maximizes automation while acknowledging the practical limits of API access.
+**Technology Stack**:
+- **NLP**: Google Gemini API (gemini-2.5-flash) - 10 requests/min free tier
+- **Python**: 3.12.12 (~25% faster than 3.9)
+- **Local Tools**: EMBOSS 6.6.0, BEDTools 2.31.1
+- **APIs**: Ensembl REST, NCBI BLAST, UCSC Genome Browser, GTEx Portal
+- **Packages**: BioPython 1.86, Streamlit 1.51.0, Pandas 2.3.3
+
+**Recommended Approach**: Use BioQuery NoLocal for all computational analysis (sequence processing, alignments, statistics, BED intersections) and gene info lookups. For GTEx expression, use the provided portal link and follow the instructions. For multi-question assignments, paste all questions at once (respecting rate limits). This workflow maximizes automation while acknowledging the practical limits of API access.
+
+**Rate Limiting Note**: Gemini free tier allows 10 requests/minute. For assignments with many questions, process in batches of 5-10 questions with 60-second pauses between batches.
