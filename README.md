@@ -104,6 +104,20 @@ Chain multiple operations together using "then" or "and then":
 - "Get transcript sequence for TP53 and then BLAST it"
 - "Translate BRCA1 then find restriction sites"
 
+### Multiple Question Mode
+Paste entire assignments with numbered questions - each will be processed independently:
+```
+1. What is the GC content of SOCS3?
+2. Translate ALKBH1 gene
+3. What tissues express TP53 highest?
+```
+
+Supports formats:
+- `1.`, `2.`, `3.` (numbered list)
+- `Question 1:`, `Question 2:` (labeled format)
+
+Each question gets its own result section with expand/collapse capability.
+
 ### Method 2: Manual Tool Selection
 1. Go to the **"🔧 Manual Tool Selection"** tab
 2. Choose a tool from the dropdown
