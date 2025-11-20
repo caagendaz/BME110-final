@@ -51,6 +51,9 @@ class EMBOSSWrapper:
             'codon_usage': 'cusp',
             'pepstats': 'pepstats',
             'protein_stats': 'pepstats',
+            'molecular_weight': 'pepstats',
+            'weight': 'pepstats',
+            'mass': 'pepstats',
             'wordcount': 'wordcount',
             'oligonucleotide': 'wordcount',
             'bedtools': 'bedtools_intersect',
@@ -584,6 +587,10 @@ Interpretation:
         Available genomes: hg38, hg37, mm10, mm9, dm6, dm3, ce10, sacCer3
         """
         try:
+            # If single position provided, create small range around it
+            if start == end or end == 0:
+                end = start + 100  # Get 100bp window
+            
             # UCSC DAS server endpoint (no authentication needed, no storage)
             base_url = "https://genome.ucsc.edu/cgi-bin/das"
             
@@ -903,8 +910,18 @@ Keep it conversational and friendly."""
                 else:
                     return f"Error: Could not resolve gene {sequence}: {gene_info}"
             
+            # Auto-detect protein sequences (contain amino acids not in DNA/RNA)
+            protein_only_aa = set('EFILPQZ')  # These amino acids don't appear in DNA/RNA
+            if any(aa in sequence.upper() for aa in protein_only_aa):
+                # Definitely a protein sequence
+                if blast_type == 'blastn':
+                    blast_type = 'blastp'
+                    if database == 'nt':
+                        database = 'nr'
+                    print("Auto-detected protein sequence, using blastp")
+            
             print(f"Submitting {blast_type} search to NCBI (this may take 10-30 seconds)...")
-            print(f"Query sequence length: {len(sequence)} bp")
+            print(f"Query sequence length: {len(sequence)} {'aa' if blast_type == 'blastp' else 'bp'}")
             
             # Submit BLAST query using NCBIWWW (web interface)
             result_handle = NCBIWWW.qblast(blast_type, database, sequence, 
