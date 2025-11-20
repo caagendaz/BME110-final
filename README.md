@@ -2,7 +2,7 @@
 
 **Self-Contained Natural Language Bioinformatics Tool to do EMBOSS Analyses**
 
-A Streamlit web application that uses natural language AI (Ollama) to convert user requests into EMBOSS bioinformatics analyses. Perfect for researchers who want to run bioinformatics tools without learning command-line syntax.
+A Streamlit web application that uses natural language AI (Google Gemini) to convert user requests into EMBOSS bioinformatics analyses. Perfect for researchers who want to run bioinformatics tools without learning command-line syntax.
 
 ## Features
 
@@ -12,7 +12,7 @@ A Streamlit web application that uses natural language AI (Ollama) to convert us
 - 🔬 **BLAST Integration**: Run NCBI BLAST searches on sequences or genes remotely via BioPython
 - � **Multi-Step Workflows**: Chain operations together (e.g., "find gene ALKBH1 then BLAST it")
 - 🧬 **DNA/RNA Conversion**: Convert between DNA and RNA sequences (T↔U)
-- 🎯 **AI-Powered**: Local LLM (Ollama) for intelligent tool selection and parameter extraction
+- 🎯 **AI-Powered**: Google Gemini API for intelligent tool selection and parameter extraction
 - 🌐 **Web Interface**: Beautiful Streamlit UI with 5 integrated tabs
 - 💾 **Results Export**: Download analysis results as text files
 
@@ -30,38 +30,36 @@ conda install -c bioconda emboss biopython -y
 conda install -c conda-forge streamlit pandas -y
 
 # Install Python packages
-pip install biopython ollama
+pip install biopython google-generativeai
 ```
 
-### 2. Install Ollama
+### 2. Get Google Gemini API Key
 
-**On Windows:**
-- Download from https://ollama.com/download/windows
-- Run the installer
-- Run in PowerShell: `$env:OLLAMA_HOST = "0.0.0.0:11434"; ollama serve`
+1. Go to https://ai.google.dev/
+2. Click "Get API Key" in Google AI Studio
+3. Create a new API key (it's free!)
+4. Set the environment variable:
 
-**On macOS:**
+**On Linux/macOS:**
 ```bash
-brew install ollama
-ollama serve
+export GOOGLE_API_KEY='your_api_key_here'
 ```
 
-**On Linux:**
+**On Windows PowerShell:**
+```powershell
+$env:GOOGLE_API_KEY = "your_api_key_here"
+```
+
+**Or create a `.env` file:**
 ```bash
-curl -fsSL https://ollama.ai/install.sh | sh
-ollama serve
+# Copy the example file
+cp .env.example .env
+
+# Edit .env and add your key
+GOOGLE_API_KEY=your_api_key_here
 ```
 
-### 3. Pull a Model
-
-In a new terminal:
-```bash
-ollama pull gemma3:4b
-# Or: ollama pull phi3:mini
-# Or: ollama pull llama3.2:3b
-```
-
-### 4. Run the App
+### 3. Run the App
 
 **Linux/macOS:**
 ```bash

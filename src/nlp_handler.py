@@ -1,27 +1,35 @@
 """
 NLP Handler for BioQuery Local
-Converts natural language requests to EMBOSS tool calls using Ollama
+Converts natural language requests to EMBOSS tool calls using Google Gemini
 """
 
 import json
 from typing import Dict, Optional, Tuple
-from ollama import Client
+import google.generativeai as genai
 import re
+import os
 
 
 class NLPHandler:
-    """Convert natural language queries to EMBOSS tool commands using Ollama"""
+    """Convert natural language queries to EMBOSS tool commands using Google Gemini"""
     
-    def __init__(self, ollama_host: str = "http://192.168.128.1:11434", model: str = "gemma3:4b"):
-        """Initialize the NLP handler with Ollama client
+    def __init__(self, api_key: Optional[str] = None, model: str = "gemini-1.5-flash"):
+        """Initialize the NLP handler with Google Gemini
         
         Args:
-            ollama_host: URL to Ollama server
-            model: Model name to use (default: gemma3:4b)
+            api_key: Google API key (or set GOOGLE_API_KEY environment variable)
+            model: Model name to use (default: gemini-1.5-flash)
         """
-        self.ollama_host = ollama_host
-        self.model = model
-        self.client = Client(host=ollama_host)
+        self.model_name = model
+        
+        # Get API key from parameter or environment
+        self.api_key = api_key or os.getenv('GOOGLE_API_KEY')
+        if not self.api_key:
+            raise ValueError("Google API key required. Set GOOGLE_API_KEY environment variable or pass api_key parameter.")
+        
+        # Configure Gemini
+        genai.configure(api_key=self.api_key)
+        self.model = genai.GenerativeModel(model)
         
         # Define the system prompt for the LLM
         self.system_prompt = """You are a bioinformatics assistant that helps users run EMBOSS analysis tools and query genomic databases.
@@ -123,16 +131,20 @@ Always respond with ONLY valid JSON, no other text. Start with { and end with }"
             Tuple of (success: bool, result: dict with tool, parameters, explanation OR steps, explanation)
         """
         try:
-            # Call Ollama with the system prompt
-            response = self.client.generate(
-                model=self.model,
-                prompt=query,
-                system=self.system_prompt,
-                stream=False
+            # Create the full prompt with system instructions
+            full_prompt = f"{self.system_prompt}\n\nUser query: {query}\n\nRespond with JSON only:"
+            
+            # Call Gemini API
+            response = self.model.generate_content(
+                full_prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.1,  # Low temperature for consistent structured output
+                    max_output_tokens=1024,
+                )
             )
             
             # Extract the response text
-            response_text = response['response'].strip()
+            response_text = response.text.strip()
             
             # Remove markdown code blocks if present
             if response_text.startswith('```'):
