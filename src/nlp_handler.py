@@ -74,6 +74,14 @@ EMBOSS tools (use 'gene_name' for gene symbols, 'sequence' for raw DNA/protein s
 - blastp: Protein BLAST search. Needs "sequence"
 - blastx: DNA to protein BLAST search. Needs "sequence"
 - search: General sequence search (uses blastn by default). Needs "sequence"
+- pepstats: Calculate protein statistics (molecular weight, amino acid composition, charge, etc.). Needs "sequence" (protein sequence). USE THIS for "molecular weight", "MW", "mass", "protein stats", "amino acid composition"
+- iep: Calculate isoelectric point (pI) of a protein. Needs "sequence" (protein sequence). USE THIS for "isoelectric point", "pI", "charge at pH"
+- cusp: Calculate codon usage statistics. Needs "gene_name" OR "sequence" (DNA). USE THIS for "codon usage", "codon frequency", "codon bias"
+- wordcount: Count word frequencies in sequences. Needs "sequence" and optional "word_size"
+- bedtools: Find overlapping genomic regions. Needs "file_a" and "file_b" (BED format data or file paths)
+- blat: UCSC BLAT search for near-exact genome matches. Needs "sequence" and optional "database" (default hg38)
+- ucsc_gene: Get gene position info from UCSC. Needs "gene_name" and optional "database" (default hg38)
+- gtex: Get tissue expression data from GTEx. Needs "gene_name" and optional "top_n" (default 10)
 
 GENOME QUERY tool:
 - genome_query: Query UCSC Genome Browser for genomic regions. Needs "genome", "chrom", "start", "end"
@@ -84,6 +92,9 @@ GENE QUERY tool:
 Decision logic:
 - IMPORTANT: If user says "translate to/into RNA" or "translate ... RNA" -> use dna_to_rna (NOT translate tool)
 - If user says "translate" alone or "translate to protein" -> use translate tool
+- IMPORTANT PROTEIN ANALYSIS: If user asks for "molecular weight", "mass", "MW", "protein statistics", "amino acid composition" -> use pepstats (NOT info)
+- If user asks for "isoelectric point", "pI", "charge" -> use iep (NOT info)
+- If user asks for "codon usage", "codon frequency", "codon bias" -> use cusp
 - If user mentions a GENE NAME/SYMBOL (like ALKBH1, TP53, BRCA1, etc.):
   - If asking about gene structure (exons, CDS, transcripts) -> use gene_query with gene_name
   - If asking to apply a tool (translate, gc, BLAST, etc.) to that gene -> use the tool with gene_name parameter and transcript_variant if specified
@@ -120,6 +131,11 @@ Examples:
 - "Search for similar proteins to MKLASELKD" -> blastp tool with sequence: MKLASELKD
 - "Find homologous DNA sequences to this: ATGCCC" -> blastn tool with sequence: ATGCCC
 - "Find TP53 gene info then translate it" -> multi-step: gene_query(gene_name: TP53), translate(gene_name: TP53, NOT sequence)
+- "Calculate the molecular weight of MKTAYIAK" -> pepstats tool with sequence: MKTAYIAK
+- "What is the isoelectric point of MKTAYIAK?" -> iep tool with sequence: MKTAYIAK
+- "Show protein statistics for MKTAYIAK" -> pepstats tool with sequence: MKTAYIAK
+- "What is the codon usage for TP53?" -> cusp tool with gene_name: TP53
+- "Which tissue has highest expression of SOCS3?" -> gtex tool with gene_name: SOCS3
 
 Always respond with ONLY valid JSON, no other text. Start with { and end with }"""
 
