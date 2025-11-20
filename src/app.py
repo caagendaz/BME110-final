@@ -59,6 +59,42 @@ def initialize_tools():
     return emboss, nlp
 
 
+def parse_fasta(fasta_content):
+    """Parse FASTA content and return list of (header, sequence) tuples
+    
+    Args:
+        fasta_content: String containing FASTA formatted sequences
+    
+    Returns:
+        List of tuples: [(header1, sequence1), (header2, sequence2), ...]
+    """
+    sequences = []
+    current_header = None
+    current_seq = []
+    
+    for line in fasta_content.split('\n'):
+        line = line.strip()
+        if not line:
+            continue
+            
+        if line.startswith('>'):
+            # Save previous sequence if exists
+            if current_header is not None:
+                sequences.append((current_header, ''.join(current_seq)))
+            # Start new sequence
+            current_header = line[1:]  # Remove '>'
+            current_seq = []
+        else:
+            # Add to current sequence
+            current_seq.append(line)
+    
+    # Don't forget the last sequence
+    if current_header is not None:
+        sequences.append((current_header, ''.join(current_seq)))
+    
+    return sequences
+
+
 def main():
     """Main Streamlit application"""
     
@@ -128,7 +164,7 @@ def main():
         "🤖 Natural Language Query",
         "🔧 Manual Tool Selection",
         "🌐 Genome Browser Query",
-        "📊 Sequence Analysis",
+        "📁 FASTA Upload & Batch",
         "📚 Documentation"
     ])
     
@@ -556,20 +592,160 @@ def main():
         - **sacCer3**: Saccharomyces cerevisiae (yeast)
         """)
     
-    # TAB 4: Batch Sequence Analysis
+    # TAB 4: FASTA File Upload & Batch Analysis
     with tab4:
-        st.subheader("Analyze multiple sequences")
+        st.subheader("Upload and analyze FASTA files")
         
-        st.info("Upload a FASTA file to analyze multiple sequences at once")
+        st.info("Upload a FASTA file to analyze multiple sequences at once. Select a tool to apply to all sequences.")
         
-        uploaded_file = st.file_uploader("Choose a FASTA file:", type=["fasta", "fa", "faa", "txt"])
+        # File upload
+        uploaded_file = st.file_uploader(
+            "Choose a FASTA file:",
+            type=["fasta", "fa", "faa", "fna", "txt"],
+            help="Upload a file containing sequences in FASTA format"
+        )
         
         if uploaded_file:
-            st.success(f"File uploaded: {uploaded_file.name}")
+            st.success(f"✓ File uploaded: {uploaded_file.name}")
             
-            # Read file
-            content = uploaded_file.read().decode('utf-8')
-            st.text_area("File content:", content, height=200)
+            # Read and parse file
+            try:
+                content = uploaded_file.read().decode('utf-8')
+                sequences = parse_fasta(content)
+                
+                if not sequences:
+                    st.warning("No sequences found in file. Make sure it's in FASTA format (headers start with '>').")
+                else:
+                    st.info(f"Found {len(sequences)} sequence(s) in file")
+                    
+                    # Show preview
+                    with st.expander("📄 Preview sequences"):
+                        for i, (header, seq) in enumerate(sequences[:5], 1):  # Show first 5
+                            st.text(f">{header}")
+                            st.text(f"{seq[:100]}{'...' if len(seq) > 100 else ''}")
+                            st.caption(f"Length: {len(seq)} bp/aa")
+                            st.markdown("---")
+                        if len(sequences) > 5:
+                            st.caption(f"... and {len(sequences) - 5} more sequences")
+                    
+                    st.markdown("---")
+                    
+                    # Tool selection for batch processing
+                    st.subheader("Select tool to apply")
+                    
+                    col1, col2 = st.columns([2, 1])
+                    
+                    with col1:
+                        batch_tool = st.selectbox(
+                            "Choose analysis tool:",
+                            ["translate", "reverse", "gc", "info", "orf", "sixframe", "iep", "pepstats"],
+                            key="batch_tool"
+                        )
+                    
+                    with col2:
+                        # Tool-specific parameters
+                        params = {}
+                        if batch_tool == "translate":
+                            params['frame'] = st.slider("Reading frame:", 1, 3, 1, key="batch_frame")
+                        elif batch_tool == "orf":
+                            params['min_size'] = st.slider("Min ORF size:", 10, 500, 100, key="batch_orf")
+                    
+                    # Run analysis button
+                    if st.button("🚀 Analyze All Sequences", type="primary", key="batch_run"):
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
+                        results_container = st.container()
+                        
+                        all_results = []
+                        
+                        with results_container:
+                            for i, (header, seq) in enumerate(sequences):
+                                progress = (i + 1) / len(sequences)
+                                progress_bar.progress(progress)
+                                status_text.text(f"Processing {i+1}/{len(sequences)}: {header[:50]}...")
+                                
+                                try:
+                                    # Run the selected tool
+                                    if batch_tool == "translate":
+                                        result = emboss.translate_sequence(seq, params.get('frame', 1))
+                                    elif batch_tool == "reverse":
+                                        result = emboss.reverse_complement(seq)
+                                    elif batch_tool == "gc":
+                                        result = emboss.calculate_gc_content(seq)
+                                    elif batch_tool == "info":
+                                        result = emboss.get_sequence_info(seq)
+                                    elif batch_tool == "orf":
+                                        result = emboss.find_orfs(seq, params.get('min_size', 100))
+                                    elif batch_tool == "sixframe":
+                                        result = emboss.get_six_frame_translation(seq)
+                                    elif batch_tool == "iep":
+                                        result = emboss.calculate_isoelectric_point(seq)
+                                    elif batch_tool == "pepstats":
+                                        result = emboss.get_protein_stats(seq)
+                                    else:
+                                        result = f"Tool {batch_tool} not yet implemented for batch"
+                                    
+                                    all_results.append((header, result))
+                                    
+                                except Exception as e:
+                                    all_results.append((header, f"ERROR: {str(e)}"))
+                            
+                            status_text.text("✓ Analysis complete!")
+                            progress_bar.progress(1.0)
+                        
+                        # Display results
+                        st.markdown("---")
+                        st.subheader("📊 Results")
+                        
+                        for header, result in all_results:
+                            with st.expander(f"📄 {header}"):
+                                st.code(result, language="text")
+                        
+                        # Download all results
+                        combined_results = ""
+                        for header, result in all_results:
+                            combined_results += f"{'='*60}\n"
+                            combined_results += f"Sequence: {header}\n"
+                            combined_results += f"Tool: {batch_tool}\n"
+                            combined_results += f"{'='*60}\n"
+                            combined_results += f"{result}\n\n"
+                        
+                        st.download_button(
+                            label="📥 Download All Results",
+                            data=combined_results,
+                            file_name=f"{batch_tool}_batch_results.txt",
+                            mime="text/plain",
+                            type="primary"
+                        )
+            
+            except Exception as e:
+                st.error(f"Error processing file: {str(e)}")
+                st.write(traceback.format_exc())
+        
+        else:
+            # Show example FASTA format
+            st.markdown("### FASTA Format Example")
+            st.code("""
+>sequence1 description here
+ATGAAATTTCCCGGGAAATTTAAAGGG
+AAATTTCCCGGG
+>sequence2 another description
+ATGCCCAAAGGGTTTTAA
+>sequence3
+GCTAGCTAGCTAGCTA
+            """.strip(), language="text")
+            
+            st.markdown("### Supported Tools")
+            st.write("""
+            - **translate**: Convert DNA to protein
+            - **reverse**: Reverse complement of DNA
+            - **gc**: Calculate GC content percentage  
+            - **info**: Sequence statistics (length, type, etc.)
+            - **orf**: Find open reading frames
+            - **sixframe**: Show all 6 translation frames
+            - **iep**: Calculate isoelectric point (proteins)
+            - **pepstats**: Protein statistics (molecular weight, amino acid composition)
+            """)
     
     # TAB 5: Documentation
     with tab5:
