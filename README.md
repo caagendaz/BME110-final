@@ -24,12 +24,12 @@ A Streamlit web application that uses natural language AI (Google Gemini) to con
 ### 1. Environment Setup
 
 ```bash
-# Create conda environment
-conda create -n bioquery python=3.9 -y
+# Create conda environment with Python 3.12
+conda create -n bioquery python=3.12 -y
 conda activate bioquery
 
 # Install bioinformatics tools
-conda install -c bioconda emboss biopython bedtools -y
+conda install -c bioconda emboss bedtools -y
 conda install -c conda-forge streamlit pandas -y
 
 # Install Python packages
