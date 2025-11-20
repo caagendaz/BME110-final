@@ -56,7 +56,10 @@ class EMBOSSWrapper:
             'bedtools': 'bedtools_intersect',
             'intersect': 'bedtools_intersect',
             'blat': 'blat_search',
-            'ucsc_gene': 'ucsc_gene_info'
+            'ucsc_gene': 'ucsc_gene_info',
+            'gtex': 'gtex_expression',
+            'expression': 'gtex_expression',
+            'tissue_expression': 'gtex_expression'
         }
         
         # Tool descriptions for user guidance
@@ -83,7 +86,8 @@ class EMBOSSWrapper:
             'wordcount': 'Count oligonucleotide word frequencies',
             'bedtools': 'Find overlaps between genomic regions (BED files)',
             'blat': 'Search sequences against genome (UCSC BLAT)',
-            'ucsc_gene': 'Get gene information from UCSC Genome Browser'
+            'ucsc_gene': 'Get gene information from UCSC Genome Browser',
+            'gtex': 'Get gene expression data across tissues (GTEx)'
         }
         
         # Cache for available EMBOSS tools
@@ -1139,6 +1143,16 @@ Keep it conversational and friendly."""
                 return output
             else:
                 return f"UCSC error: {result.get('error', 'Unknown error')}"
+        elif emboss_name == 'gtex_expression':
+            # GTEx tissue expression data
+            result = self.gtex_expression(
+                kwargs.get('gene_name', ''),
+                kwargs.get('top_n', 10)
+            )
+            if result.get('success'):
+                return result.get('output', '')
+            else:
+                return f"GTEx error: {result.get('error', 'Unknown error')}"
         else:
             # Generic EMBOSS tool fallback
             return self._run_generic_emboss_tool(emboss_name, **kwargs)
@@ -1537,6 +1551,87 @@ Keep it conversational and friendly."""
             return {
                 'success': False,
                 'error': f"UCSC query failed: {str(e)}"
+            }
+
+
+    def gtex_expression(self, gene_name: str, top_n: int = 10) -> Dict:
+        """Get gene expression data across tissues from GTEx Portal
+        
+        Note: GTEx API v2 has limited public access. This function provides
+        gene information and direct links to GTEx Portal for visualization.
+        
+        Args:
+            gene_name: Gene symbol (e.g., 'SOCS3', 'TP53')
+            top_n: Number of top tissues to return (default: 10)
+        
+        Returns:
+            Dict with success status and GTEx information
+        """
+        try:
+            # Resolve gene name to Ensembl ID using Ensembl API
+            ensembl_url = f"https://rest.ensembl.org/lookup/symbol/homo_sapiens/{gene_name}"
+            headers = {"Content-Type": "application/json"}
+            
+            response = requests.get(ensembl_url, headers=headers, timeout=30)
+            
+            if response.status_code != 200:
+                return {
+                    'success': False,
+                    'error': f"Could not find Ensembl ID for gene {gene_name}"
+                }
+            
+            ensembl_data = response.json()
+            ensembl_id = ensembl_data.get('id')
+            gene_description = ensembl_data.get('description', 'No description available')
+            
+            if not ensembl_id:
+                return {
+                    'success': False,
+                    'error': f"No Ensembl ID found for {gene_name}"
+                }
+            
+            # Build GTEx Portal URL for direct visualization
+            gtex_gene_url = f"https://gtexportal.org/home/gene/{gene_name}"
+            
+            # Format output with gene information and GTEx link
+            output = f"GTEx Expression Query for {gene_name}\n"
+            output += "=" * 70 + "\n\n"
+            output += f"Gene: {gene_name}\n"
+            output += f"Ensembl ID: {ensembl_id}\n"
+            output += f"Description: {gene_description}\n\n"
+            
+            output += "GTEx Portal Access:\n"
+            output += "-" * 70 + "\n"
+            output += f"View expression data at: {gtex_gene_url}\n\n"
+            
+            output += "The GTEx Portal provides:\n"
+            output += "  • Median expression (TPM) across 54 tissues\n"
+            output += "  • Interactive bar charts and heatmaps\n"
+            output += "  • Expression by age and sex\n"
+            output += "  • eQTL data (expression quantitative trait loci)\n"
+            output += "  • Isoform-level expression\n\n"
+            
+            output += "To answer 'Which tissue has highest expression?':\n"
+            output += "  1. Click the link above\n"
+            output += "  2. Look at the 'Gene Expression' bar chart\n"
+            output += "  3. The tallest bar shows the tissue with highest median TPM\n\n"
+            
+            output += "Note: GTEx v2 API has limited public query access.\n"
+            output += "For programmatic access, consider the GTEx Portal bulk download:\n"
+            output += "https://gtexportal.org/home/downloads/adult-gtex/bulk_tissue_expression\n"
+            
+            return {
+                'success': True,
+                'output': output,
+                'ensembl_id': ensembl_id,
+                'gene_name': gene_name,
+                'gtex_url': gtex_gene_url
+            }
+        
+        except Exception as e:
+            return {
+                'success': False,
+                'error': f"GTEx query failed: {str(e)}"
             }
 
 

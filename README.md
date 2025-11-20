@@ -12,6 +12,7 @@ A Streamlit web application that uses natural language AI (Google Gemini) to con
 - 🔬 **BLAST Integration**: Run NCBI BLAST searches on sequences or genes remotely via BioPython
 - 🧬 **BLAT Integration**: Search sequences against genomes using UCSC BLAT for near-exact matches
 - 🧬 **BEDTools Support**: Find overlaps between genomic regions (SNPs, genes, regulatory elements)
+- 🧬 **GTEx Integration**: Query gene expression across 54 human tissues from GTEx Portal
 - 📊 **Multi-Step Workflows**: Chain operations together (e.g., "find gene ALKBH1 then BLAST it")
 - 🧬 **DNA/RNA Conversion**: Convert between DNA and RNA sequences (T↔U)
 - 🎯 **AI-Powered**: Google Gemini API for intelligent tool selection and parameter extraction
@@ -129,6 +130,7 @@ Chain multiple operations together using "then" or "and then":
 | **blast** | Run NCBI BLAST search | DNA/protein sequence or gene name | "BLAST this sequence: ATGC" |
 | **blat** | UCSC BLAT search (near-exact) | DNA sequence | "BLAT search ATGCCC in hg38" |
 | **bedtools** | Find genomic overlaps | Two BED files or regions | "Find SNPs overlapping tRNA genes" |
+| **gtex** | Get tissue expression data | Gene symbol | "What tissues express SOCS3 highest?" |
 | **dna_to_rna** | Convert DNA to RNA (T→U) | DNA sequence | "Convert ATGC to RNA" |
 | **rna_to_dna** | Convert RNA to DNA (U→T) | RNA sequence | "Convert AUGC to DNA" |
 
