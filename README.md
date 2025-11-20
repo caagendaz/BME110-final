@@ -10,7 +10,9 @@ A Streamlit web application that uses natural language AI (Google Gemini) to con
 - 🧬 **EMBOSS Integration**: Access 258+ powerful EMBOSS tools (dynamically discovered)
 - 🧪 **Gene-Based Queries**: Query genes by symbol (e.g., "translate ALKBH1") with Ensembl API integration
 - 🔬 **BLAST Integration**: Run NCBI BLAST searches on sequences or genes remotely via BioPython
-- � **Multi-Step Workflows**: Chain operations together (e.g., "find gene ALKBH1 then BLAST it")
+- 🧬 **BLAT Integration**: Search sequences against genomes using UCSC BLAT for near-exact matches
+- 🧬 **BEDTools Support**: Find overlaps between genomic regions (SNPs, genes, regulatory elements)
+- 📊 **Multi-Step Workflows**: Chain operations together (e.g., "find gene ALKBH1 then BLAST it")
 - 🧬 **DNA/RNA Conversion**: Convert between DNA and RNA sequences (T↔U)
 - 🎯 **AI-Powered**: Google Gemini API for intelligent tool selection and parameter extraction
 - 🌐 **Web Interface**: Beautiful Streamlit UI with 5 integrated tabs
@@ -26,11 +28,11 @@ conda create -n bioquery python=3.9 -y
 conda activate bioquery
 
 # Install bioinformatics tools
-conda install -c bioconda emboss biopython -y
+conda install -c bioconda emboss biopython bedtools -y
 conda install -c conda-forge streamlit pandas -y
 
 # Install Python packages
-pip install biopython google-generativeai
+pip install biopython google-generativeai requests
 ```
 
 ### 2. Get Google Gemini API Key
@@ -120,8 +122,13 @@ Chain multiple operations together using "then" or "and then":
 | **shuffle** | Randomize sequence | Sequence | "Shuffle ATGC" |
 | **info** | Get sequence statistics | Sequence | "Get info for ATGC" |
 | **sixframe** | All 6 translation frames | DNA sequence | "Six frame translate ATGC" |
+| **cusp** | Codon usage statistics | DNA/CDS sequence | "Calculate codon usage for ALKBH1" |
+| **pepstats** | Protein statistics (MW, pI, composition) | Protein sequence or gene | "Get protein stats for TP53" |
+| **wordcount** | Oligonucleotide frequencies | DNA sequence | "Count oligonucleotides in sequence" |
 | **gene_query** | Get gene information from Ensembl | Gene symbol (e.g., ALKBH1) | "Find gene info for TP53" |
 | **blast** | Run NCBI BLAST search | DNA/protein sequence or gene name | "BLAST this sequence: ATGC" |
+| **blat** | UCSC BLAT search (near-exact) | DNA sequence | "BLAT search ATGCCC in hg38" |
+| **bedtools** | Find genomic overlaps | Two BED files or regions | "Find SNPs overlapping tRNA genes" |
 | **dna_to_rna** | Convert DNA to RNA (T→U) | DNA sequence | "Convert ATGC to RNA" |
 | **rna_to_dna** | Convert RNA to DNA (U→T) | RNA sequence | "Convert AUGC to DNA" |
 

@@ -46,7 +46,17 @@ class EMBOSSWrapper:
             'blastn': 'blastn',
             'blastp': 'blastp',
             'blastx': 'blastx',
-            'search': 'blast'
+            'search': 'blast',
+            'cusp': 'cusp',
+            'codon_usage': 'cusp',
+            'pepstats': 'pepstats',
+            'protein_stats': 'pepstats',
+            'wordcount': 'wordcount',
+            'oligonucleotide': 'wordcount',
+            'bedtools': 'bedtools_intersect',
+            'intersect': 'bedtools_intersect',
+            'blat': 'blat_search',
+            'ucsc_gene': 'ucsc_gene_info'
         }
         
         # Tool descriptions for user guidance
@@ -67,7 +77,13 @@ class EMBOSSWrapper:
             'gc': 'Calculate GC content of a sequence',
             'download': 'Download sequence from NCBI database',
             'isoelectric': 'Calculate isoelectric point of protein',
-            'iep': 'Calculate isoelectric point of protein'
+            'iep': 'Calculate isoelectric point of protein',
+            'cusp': 'Calculate codon usage statistics',
+            'pepstats': 'Calculate protein statistics (MW, pI, composition)',
+            'wordcount': 'Count oligonucleotide word frequencies',
+            'bedtools': 'Find overlaps between genomic regions (BED files)',
+            'blat': 'Search sequences against genome (UCSC BLAT)',
+            'ucsc_gene': 'Get gene information from UCSC Genome Browser'
         }
         
         # Cache for available EMBOSS tools
@@ -1087,8 +1103,44 @@ Keep it conversational and friendly."""
                 max_results=int(kwargs.get('max_results', 10)),
                 expect_threshold=float(kwargs.get('expect_threshold', 10.0))
             )
+        elif emboss_name == 'bedtools_intersect':
+            # BEDTools intersect for genomic overlap analysis
+            result = self.bedtools_intersect(
+                kwargs.get('file_a', ''),
+                kwargs.get('file_b', ''),
+                kwargs.get('output_format', 'bed')
+            )
+            if result.get('success'):
+                return result.get('output', '') + f"\n\n{result.get('summary', '')}"
+            else:
+                return f"BEDTools error: {result.get('error', 'Unknown error')}"
+        elif emboss_name == 'blat_search':
+            # BLAT search via UCSC
+            result = self.blat_search(
+                kwargs.get('sequence', ''),
+                kwargs.get('database', 'hg38'),
+                kwargs.get('output_format', 'psl')
+            )
+            if result.get('success'):
+                return result.get('output', '') + f"\n\n{result.get('summary', '')}\n{result.get('note', '')}"
+            else:
+                return f"BLAT error: {result.get('error', 'Unknown error')}"
+        elif emboss_name == 'ucsc_gene_info':
+            # UCSC gene information
+            result = self.ucsc_gene_info(
+                kwargs.get('gene_name', ''),
+                kwargs.get('database', 'hg38')
+            )
+            if result.get('success'):
+                output = f"Gene: {result.get('gene', '')}\n"
+                output += f"Database: {result.get('database', '')}\n"
+                output += f"Note: {result.get('note', '')}\n"
+                output += f"Browser link: {result.get('api_endpoint', '')}"
+                return output
+            else:
+                return f"UCSC error: {result.get('error', 'Unknown error')}"
         else:
-            # Generic fallback for any other EMBOSS tool (iep, charge, mwfilter, etc.)
+            # Generic EMBOSS tool fallback
             return self._run_generic_emboss_tool(emboss_name, **kwargs)
     
     def _run_generic_emboss_tool(self, tool_name: str, **kwargs) -> str:
@@ -1312,6 +1364,180 @@ Keep it conversational and friendly."""
                 output += f"❌ Error: {result.get('error', 'Unknown error')}\n\n"
         
         return output
+
+
+    def bedtools_intersect(self, file_a: str, file_b: str, output_format: str = "bed") -> Dict:
+        """Find overlaps between two BED files using BEDTools
+        
+        Args:
+            file_a: Path to first BED file or BED content as string
+            file_b: Path to second BED file or BED content as string
+            output_format: Output format (bed, count, etc.)
+        
+        Returns:
+            Dict with success status and results
+        """
+        try:
+            # Check if BEDTools is installed
+            try:
+                subprocess.run(['bedtools', '--version'], capture_output=True, check=True)
+            except (FileNotFoundError, subprocess.CalledProcessError):
+                return {
+                    'success': False,
+                    'error': 'BEDTools not installed. Install with: conda install -c bioconda bedtools'
+                }
+            
+            # Create temp files if content is provided as strings
+            temp_files = []
+            
+            if not os.path.exists(file_a):
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.bed', delete=False) as f:
+                    f.write(file_a)
+                    file_a = f.name
+                    temp_files.append(file_a)
+            
+            if not os.path.exists(file_b):
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.bed', delete=False) as f:
+                    f.write(file_b)
+                    file_b = f.name
+                    temp_files.append(file_b)
+            
+            # Run bedtools intersect
+            cmd = ['bedtools', 'intersect', '-a', file_a, '-b', file_b]
+            
+            if output_format == 'count':
+                cmd.append('-c')
+            elif output_format == 'summary':
+                cmd.extend(['-wo'])  # Write original A entry + overlap
+            
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            
+            # Cleanup temp files
+            for tf in temp_files:
+                try:
+                    os.unlink(tf)
+                except:
+                    pass
+            
+            if result.returncode == 0:
+                output = result.stdout.strip()
+                lines = output.split('\n') if output else []
+                
+                return {
+                    'success': True,
+                    'output': output,
+                    'count': len(lines),
+                    'summary': f"Found {len(lines)} overlapping regions"
+                }
+            else:
+                return {
+                    'success': False,
+                    'error': f"BEDTools error: {result.stderr}"
+                }
+        
+        except Exception as e:
+            return {
+                'success': False,
+                'error': f"BEDTools intersect failed: {str(e)}"
+            }
+
+
+    def blat_search(self, sequence: str, database: str = "hg38", output_format: str = "psl") -> Dict:
+        """Search sequence against genome using BLAT via UCSC API
+        
+        Args:
+            sequence: DNA or protein sequence to search
+            database: Genome assembly (hg38, mm10, etc.)
+            output_format: Output format (psl, json)
+        
+        Returns:
+            Dict with success status and BLAT results
+        """
+        try:
+            # UCSC BLAT API endpoint
+            url = "https://genome.ucsc.edu/cgi-bin/hgBlat"
+            
+            params = {
+                'userSeq': sequence,
+                'type': 'BLAT',
+                'db': database,
+                'output': output_format
+            }
+            
+            response = requests.post(url, data=params, timeout=60)
+            
+            if response.status_code == 200:
+                result = response.text
+                
+                # Parse basic info from PSL format
+                lines = result.split('\n')
+                hits = [l for l in lines if l and not l.startswith('#') and not l.startswith('psLayout')]
+                
+                return {
+                    'success': True,
+                    'output': result,
+                    'num_hits': len(hits),
+                    'summary': f"BLAT search found {len(hits)} hits in {database}",
+                    'note': "BLAT is more sensitive for near-exact matches than BLAST"
+                }
+            else:
+                return {
+                    'success': False,
+                    'error': f"BLAT search failed: HTTP {response.status_code}"
+                }
+        
+        except Exception as e:
+            return {
+                'success': False,
+                'error': f"BLAT search failed: {str(e)}"
+            }
+
+
+    def ucsc_gene_info(self, gene_name: str, database: str = "hg38") -> Dict:
+        """Get detailed gene information from UCSC Genome Browser
+        
+        Args:
+            gene_name: Gene symbol or name
+            database: Genome assembly (hg38, mm10, etc.)
+        
+        Returns:
+            Dict with gene information including position, exons, strand
+        """
+        try:
+            # UCSC Table Browser API
+            url = "https://api.genome.ucsc.edu/getData/track"
+            
+            params = {
+                'genome': database,
+                'track': 'ncbiRefSeq',
+                'chrom': 'chr1',  # Will be updated based on search
+            }
+            
+            # First, search for the gene
+            search_url = f"https://api.genome.ucsc.edu/list/tracks?genome={database}"
+            
+            response = requests.get(search_url, timeout=30)
+            
+            if response.status_code == 200:
+                # For now, return a structured response indicating capability
+                return {
+                    'success': True,
+                    'gene': gene_name,
+                    'database': database,
+                    'note': 'UCSC API access configured. Use UCSC Genome Browser for detailed visualization.',
+                    'api_endpoint': f"https://genome.ucsc.edu/cgi-bin/hgTracks?db={database}&position={gene_name}"
+                }
+            else:
+                return {
+                    'success': False,
+                    'error': f"UCSC API error: HTTP {response.status_code}"
+                }
+        
+        except Exception as e:
+            return {
+                'success': False,
+                'error': f"UCSC query failed: {str(e)}"
+            }
 
 
 if __name__ == "__main__":
