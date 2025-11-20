@@ -1,8 +1,8 @@
-# BioQuery Local 🧬
+# BioQuery NoLocal 🧬
 
-**Self-Contained Natural Language Bioinformatics Tool to do EMBOSS Analyses**
+**Cloud-Powered Natural Language Bioinformatics Tool to do EMBOSS Analyses**
 
-A Streamlit web application that uses natural language AI (Google Gemini) to convert user requests into EMBOSS bioinformatics analyses. Perfect for researchers who want to run bioinformatics tools without learning command-line syntax.
+A Streamlit web application that uses natural language AI (Google Gemini) to convert user requests into EMBOSS bioinformatics analyses. Perfect for researchers who want to run bioinformatics tools without learning command-line syntax or managing local AI models.
 
 ## Features
 

@@ -1,5 +1,5 @@
 """
-EMBOSS Wrapper for BioQuery Local
+EMBOSS Wrapper for BioQuery NoLocal
 Maps natural language to EMBOSS bioinformatics tools
 """
 

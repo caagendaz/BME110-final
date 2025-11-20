@@ -1,5 +1,5 @@
 """
-NLP Handler for BioQuery Local
+NLP Handler for BioQuery NoLocal
 Converts natural language requests to EMBOSS tool calls using Google Gemini
 """
 
@@ -13,12 +13,12 @@ import os
 class NLPHandler:
     """Convert natural language queries to EMBOSS tool commands using Google Gemini"""
     
-    def __init__(self, api_key: Optional[str] = None, model: str = "gemini-1.5-flash"):
+    def __init__(self, api_key: Optional[str] = None, model: str = "gemini-2.5-flash"):
         """Initialize the NLP handler with Google Gemini
         
         Args:
             api_key: Google API key (or set GOOGLE_API_KEY environment variable)
-            model: Model name to use (default: gemini-1.5-flash)
+            model: Model name to use (default: gemini-2.5-flash)
         """
         self.model_name = model
         
@@ -27,9 +27,11 @@ class NLPHandler:
         if not self.api_key:
             raise ValueError("Google API key required. Set GOOGLE_API_KEY environment variable or pass api_key parameter.")
         
-        # Configure Gemini
+        # Configure Gemini with the stable v1 API
         genai.configure(api_key=self.api_key)
-        self.model = genai.GenerativeModel(model)
+        
+        # Use models/ prefix for v1 API
+        self.model = genai.GenerativeModel(f"models/{model}")
         
         # Define the system prompt for the LLM
         self.system_prompt = """You are a bioinformatics assistant that helps users run EMBOSS analysis tools and query genomic databases.
@@ -363,22 +365,23 @@ Always respond with ONLY valid JSON, no other text. Start with { and end with }"
         return response
     
     def test_connection(self) -> bool:
-        """Test if Ollama connection is working
+        """Test if Gemini API connection is working
         
         Returns:
             bool: True if connection successful
         """
         try:
-            models = self.client.list()
-            if models and len(models.models) > 0:
-                print(f"✓ Connected to Ollama at {self.ollama_host}")
-                print(f"✓ Available models: {[m.model for m in models.models]}")
+            # Try a simple test query to verify the API key works
+            response = self.model.generate_content("Test")
+            if response:
+                print(f"✓ Connected to Google Gemini")
+                print(f"✓ Model: {self.model_name}")
                 return True
             else:
-                print("✗ No models available in Ollama")
+                print("✗ No response from Gemini")
                 return False
         except Exception as e:
-            print(f"✗ Failed to connect to Ollama: {str(e)}")
+            print(f"✗ Failed to connect to Gemini: {str(e)}")
             return False
 
 

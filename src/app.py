@@ -71,8 +71,8 @@ def main():
     with col1:
         st.title("🧬")
     with col2:
-        st.title("BioQuery Local")
-        st.caption("Self-contained natural language bioinformatics analysis tool")
+        st.title("BioQuery NoLocal")
+        st.caption("Cloud-powered natural language bioinformatics analysis tool")
     
     st.markdown("---")
     
@@ -99,9 +99,9 @@ def main():
                 st.error("✗ EMBOSS")
         with col2:
             if nlp_ready:
-                st.success("✓ Ollama")
+                st.success("✓ Gemini")
             else:
-                st.error("✗ Ollama")
+                st.error("✗ Gemini")
         
         st.markdown("---")
         
@@ -117,9 +117,9 @@ def main():
         # About
         st.subheader("ℹ️ About")
         st.info(
-            "BioQuery Local uses:\n"
+            "BioQuery NoLocal uses:\n"
             "- **EMBOSS**: Bioinformatics analysis\n"
-            "- **Ollama**: Local LLM for natural language\n"
+            "- **Google Gemini**: AI for natural language\n"
             "- **Streamlit**: Interactive interface"
         )
     
@@ -532,7 +532,7 @@ def main():
         """)
         
         st.markdown("---")
-        st.caption("BioQuery Local v1.0 - Built with EMBOSS, Ollama, and Streamlit")
+        st.caption("BioQuery NoLocal v1.0 - Built with EMBOSS, Google Gemini, and Streamlit")
 
 
 if __name__ == "__main__":
