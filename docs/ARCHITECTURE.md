@@ -1,4 +1,4 @@
-# BioQuery Local - Architecture & Flow Diagrams
+# BioQuery NoLocal - Architecture & Flow Diagrams
 
 ## System Architecture Overview
 
@@ -7,83 +7,107 @@ graph TD
     UI["🌐 Streamlit Web App<br/>http://localhost:8501"]
     
     subgraph Frontend["Frontend Layer"]
-        NLP["NLP Handler<br/>(nlp_handler.py)<br/>Ollama gemma3:4b"]
+        NLP["NLP Handler<br/>(nlp_handler.py)<br/>Google Gemini API<br/>gemini-2.5-flash"]
         ManualTool["Manual Tool Selection"]
+        GenomeQuery["Genome Browser Query"]
     end
     
     subgraph Backend["Backend Processing"]
-        Wrapper["EMBOSS Wrapper<br/>(emboss_wrapper.py)<br/>258+ tools"]
-        GeneResolver["Gene Symbol Resolver<br/>Ensembl API"]
+        Wrapper["EMBOSS Wrapper<br/>(emboss_wrapper.py)<br/>258+ tools + APIs"]
+        GeneResolver["Gene Symbol Resolver<br/>Ensembl REST API"]
         TranscriptFetcher["Transcript Fetcher<br/>Ensembl API"]
         ToolExecutor["EMBOSS Tool Executor<br/>Subprocess runner"]
+        BEDTools["BEDTools Executor<br/>Genomic overlaps"]
+        ProteinAnalyzer["Protein Analyzer<br/>pepstats, iep"]
     end
     
-    subgraph ExternalAPIs["External Databases"]
-        Ensembl["Ensembl REST API<br/>Gene/Transcript Info"]
-        UCSC["UCSC Genome Browser<br/>Genomic Regions"]
-        NCBI["NCBI Entrez<br/>Sequence Download"]
+    subgraph ExternalAPIs["External Databases & Tools"]
+        Ensembl["Ensembl REST API<br/>Gene/Transcript/CDS"]
+        UCSC["UCSC Genome Browser<br/>DAS API & BLAT"]
+        NCBI["NCBI BLAST<br/>BioPython Remote"]
+        GTEx["GTEx Portal<br/>Expression Links"]
     end
     
     UI -->|Natural Language Query| NLP
     UI -->|Manual Input| ManualTool
+    UI -->|Genome Coordinates| GenomeQuery
     
-    NLP -->|Parse Query| Wrapper
+    NLP -->|Parse with Gemini| Wrapper
     ManualTool -->|Tool + Params| Wrapper
+    GenomeQuery -->|Coordinates| Wrapper
     
     Wrapper -->|Gene Symbol?| GeneResolver
     GeneResolver -->|Query Gene Info| Ensembl
     Ensembl -->|Transcripts & IDs| TranscriptFetcher
-    TranscriptFetcher -->|Fetch Sequence| Ensembl
+    TranscriptFetcher -->|Fetch CDS/cDNA| Ensembl
     
-    Wrapper -->|Run EMBOSS Tool| ToolExecutor
-    ToolExecutor -->|Execute| Wrapper
+    Wrapper -->|DNA/RNA Tool| ToolExecutor
+    Wrapper -->|Protein Analysis| ProteinAnalyzer
+    Wrapper -->|BED Intersect| BEDTools
+    ToolExecutor -->|Execute EMBOSS| Wrapper
+    ProteinAnalyzer -->|pepstats/iep| Wrapper
     
-    Wrapper -->|Genomic Region?| UCSC
-    Wrapper -->|Download Sequence?| NCBI
+    Wrapper -->|BLAST Query| NCBI
+    Wrapper -->|Genomic Region| UCSC
+    Wrapper -->|Expression Data| GTEx
+    
+    NCBI -->|Alignment Results| Wrapper
+    UCSC -->|Sequence/BLAT| Wrapper
+    GTEx -->|Portal Link| Wrapper
     
     Wrapper -->|Results| UI
     
     style UI fill:#1e88e5,stroke:#0d47a1,color:#ffffff,font-weight:bold
     style NLP fill:#ff6f00,stroke:#e65100,color:#ffffff,font-weight:bold
     style ManualTool fill:#7b1fa2,stroke:#4a148c,color:#ffffff,font-weight:bold
+    style GenomeQuery fill:#0288d1,stroke:#01579b,color:#ffffff,font-weight:bold
     style Wrapper fill:#388e3c,stroke:#1b5e20,color:#ffffff,font-weight:bold
     style GeneResolver fill:#0097a7,stroke:#006064,color:#ffffff,font-weight:bold
     style TranscriptFetcher fill:#00838f,stroke:#004d40,color:#ffffff,font-weight:bold
     style ToolExecutor fill:#00796b,stroke:#004d40,color:#ffffff,font-weight:bold
+    style BEDTools fill:#5e35b1,stroke:#4527a0,color:#ffffff,font-weight:bold
+    style ProteinAnalyzer fill:#c62828,stroke:#b71c1c,color:#ffffff,font-weight:bold
     style Ensembl fill:#d32f2f,stroke:#b71c1c,color:#ffffff,font-weight:bold
     style UCSC fill:#f57c00,stroke:#e65100,color:#ffffff,font-weight:bold
     style NCBI fill:#fbc02d,stroke:#f57f17,color:#000000,font-weight:bold
+    style GTEx fill:#7cb342,stroke:#558b2f,color:#ffffff,font-weight:bold
 ```
 
 ## Natural Language Query Flow
 
 ```mermaid
 graph LR
-    A["User Query<br/>e.g., 'Translate ALKBH1'"] -->|Send to Ollama| B["NLP Handler<br/>gemma3:4b Model"]
+    A["User Query<br/>e.g., 'Calculate molecular weight of MKTAYIAK'"] -->|Send to Gemini API| B["NLP Handler<br/>gemini-2.5-flash"]
     
     B -->|Parse with System Prompt| C{Query Type?}
     
     C -->|Gene Query| D["→ gene_query tool<br/>gene_name: ALKBH1"]
     C -->|EMBOSS Tool| E["→ translate tool<br/>gene_name: ALKBH1"]
-    C -->|Genome Region| F["→ genome_query<br/>chrom, start, end"]
-    C -->|Raw Sequence| G["→ tool<br/>sequence: ATGC..."]
+    C -->|Protein Analysis| F["→ pepstats/iep<br/>sequence: MKTAYIAK"]
+    C -->|Genome Region| G["→ genome_query<br/>chrom, start, end"]
+    C -->|BLAST/BLAT| H["→ blast/blat<br/>sequence: ATGC..."]
+    C -->|Multi-Step| I["→ steps array<br/>[gene_query, translate]"]
     
-    D -->|Return JSON| H["Tool + Parameters"]
-    E -->|Return JSON| H
-    F -->|Return JSON| H
-    G -->|Return JSON| H
+    D -->|Return JSON| J["Tool + Parameters"]
+    E -->|Return JSON| J
+    F -->|Return JSON| J
+    G -->|Return JSON| J
+    H -->|Return JSON| J
+    I -->|Return JSON| J
     
-    H -->|Pass to EMBOSS Wrapper| I["Execute Operation"]
+    J -->|Pass to EMBOSS Wrapper| K["Execute Operation(s)"]
     
     style A fill:#1565c0,stroke:#0d47a1,color:#ffffff,font-weight:bold
-    style B fill:#1565c0,stroke:#0d47a1,color:#ffffff,font-weight:bold
+    style B fill:#ff6f00,stroke:#e65100,color:#ffffff,font-weight:bold
     style C fill:#f57f17,stroke:#e65100,color:#ffffff,font-weight:bold
     style D fill:#2e7d32,stroke:#1b5e20,color:#ffffff,font-weight:bold
     style E fill:#2e7d32,stroke:#1b5e20,color:#ffffff,font-weight:bold
-    style F fill:#2e7d32,stroke:#1b5e20,color:#ffffff,font-weight:bold
-    style G fill:#2e7d32,stroke:#1b5e20,color:#ffffff,font-weight:bold
-    style H fill:#00695c,stroke:#004d40,color:#ffffff,font-weight:bold
-    style I fill:#6a1b9a,stroke:#4a148c,color:#ffffff,font-weight:bold
+    style F fill:#c62828,stroke:#b71c1c,color:#ffffff,font-weight:bold
+    style G fill:#0288d1,stroke:#01579b,color:#ffffff,font-weight:bold
+    style H fill:#5e35b1,stroke:#4527a0,color:#ffffff,font-weight:bold
+    style I fill:#f57f17,stroke:#e65100,color:#ffffff,font-weight:bold
+    style J fill:#00695c,stroke:#004d40,color:#ffffff,font-weight:bold
+    style K fill:#6a1b9a,stroke:#4a148c,color:#ffffff,font-weight:bold
 ```
 
 ## Gene-Based Tool Execution Pipeline
@@ -156,33 +180,27 @@ graph TB
     UI --> TAB1["Tab 1:<br/>Natural Language Query"]
     UI --> TAB2["Tab 2:<br/>Manual Tool Selection"]
     UI --> TAB3["Tab 3:<br/>Genome Browser Query"]
-    UI --> TAB4["Tab 4:<br/>Sequence Analysis"]
-    UI --> TAB5["Tab 5:<br/>Documentation"]
+    UI --> TAB4["Tab 4:<br/>Documentation"]
     
-    TAB1 --> NLP["Enter natural language<br/>e.g., 'Find GC of ALKBH1'"]
-    NLP --> NLPRUN["NLP Handler processes<br/>& calls EMBOSS Wrapper"]
-    NLPRUN --> NLP_OUT["Display formatted results"]
+    TAB1 --> NLP["Enter natural language<br/>Supports multi-question mode<br/>e.g., '1. GC of ALKBH1<br/>2. Translate TP53'"]
+    NLP --> NLPRUN["NLP Handler (Gemini)<br/>processes & routes to tools"]
+    NLPRUN --> NLP_OUT["Display formatted results<br/>Expandable sections per question"]
     
-    TAB2 --> MANUAL["Select tool from dropdown<br/>Enter gene name or sequence"]
-    MANUAL --> MANUAL_RUN["Execute selected tool"]
-    MANUAL_RUN --> MANUAL_OUT["Show output"]
+    TAB2 --> MANUAL["Select tool from dropdown<br/>258+ EMBOSS tools<br/>+ pepstats, iep, cusp, blast"]
+    MANUAL --> MANUAL_RUN["Execute selected tool<br/>with gene name or sequence"]
+    MANUAL_RUN --> MANUAL_OUT["Show output with download"]
     
-    TAB3 --> GENOME["Enter genome coordinates<br/>hg38, chr1, 1000-2000"]
-    GENOME --> GENOME_RUN["Query UCSC API"]
-    GENOME_RUN --> GENOME_OUT["Display region info"]
+    TAB3 --> GENOME["Enter genome coordinates<br/>hg38, chr1, 1000-2000<br/>Or single position"]
+    GENOME --> GENOME_RUN["Query UCSC DAS API<br/>100bp window if single pos"]
+    GENOME_RUN --> GENOME_OUT["Display sequence in FASTA"]
     
-    TAB4 --> BATCH["Upload FASTA or enter<br/>multiple sequences"]
-    BATCH --> BATCH_RUN["Process batch"]
-    BATCH_RUN --> BATCH_OUT["Downloadable results"]
-    
-    TAB5 --> DOCS["View documentation<br/>& API reference"]
+    TAB4 --> DOCS["View documentation<br/>Tool descriptions<br/>Usage examples"]
     
     style UI fill:#1565c0,stroke:#0d47a1,color:#ffffff,font-weight:bold
     style TAB1 fill:#f57f17,stroke:#e65100,color:#ffffff,font-weight:bold
     style TAB2 fill:#6a1b9a,stroke:#4a148c,color:#ffffff,font-weight:bold
     style TAB3 fill:#2e7d32,stroke:#1b5e20,color:#ffffff,font-weight:bold
-    style TAB4 fill:#c62828,stroke:#b71c1c,color:#ffffff,font-weight:bold
-    style TAB5 fill:#5e35b1,stroke:#3f51b5,color:#ffffff,font-weight:bold
+    style TAB4 fill:#5e35b1,stroke:#3f51b5,color:#ffffff,font-weight:bold
 ```
 
 ## Data Flow: Gene Query to Result
@@ -191,15 +209,15 @@ graph TB
 sequenceDiagram
     participant User
     participant Streamlit as Streamlit UI
-    participant NLP as NLP Handler
+    participant NLP as NLP Handler<br/>(Gemini API)
     participant Wrapper as EMBOSS Wrapper
-    participant Ensembl as Ensembl API
+    participant Ensembl as Ensembl REST API
     participant EMBOSS as EMBOSS Tools
 
     User->>Streamlit: "Give protein length of CARS1 transcript 5"
     Streamlit->>NLP: parse_user_query()
     NLP->>NLP: Format system prompt + query
-    NLP->>NLP: Call Ollama gemma3:4b
+    NLP->>NLP: Call Gemini gemini-2.5-flash
     NLP->>Streamlit: return {tool: 'translate', parameters: {gene_name: 'CARS1', transcript_variant: 'transcript variant 5'}}
     
     Streamlit->>Wrapper: run_tool('translate', gene_name='CARS1', transcript_variant='transcript variant 5')
@@ -215,45 +233,55 @@ sequenceDiagram
     EMBOSS->>Wrapper: 832 aa protein sequence
     
     Wrapper->>Streamlit: "Gene CARS1 from transcript variant 5:\nProtein Length: 832 aa\nLast 3: FQ*"
-    Streamlit->>User: Display formatted result
+    Streamlit->>User: Display formatted result with download button
 ```
 
 ## Key Features at a Glance
 
 ```mermaid
 mindmap
-  root((BioQuery Local))
+  root((BioQuery NoLocal))
     Natural Language Interface
-      Ollama gemma3:4b LLM
+      Google Gemini API gemini-2.5-flash
       Automatic tool selection
       Gene symbol recognition
       Transcript variant support
+      Multi-question batch processing
     EMBOSS Integration
       258+ bioinformatics tools
       Dynamic tool discovery
       Generic fallback for any tool
       Real-time execution
+      Protein analysis pepstats iep cusp
     Gene-Based Operations
-      Ensembl API integration
+      Ensembl REST API integration
       Transcript resolution
       CDS/cDNA sequence fetching
       Variant-specific analysis
+      Multi-step workflows
     Genomic Data Access
-      UCSC Genome Browser API
-      Region queries
+      UCSC Genome Browser DAS API
+      BLAT near-exact search
+      Region queries with auto-windowing
       No data storage needed
       Live API streaming
+    Database Searches
+      NCBI BLAST via BioPython
+      Auto-detect protein vs DNA
+      BEDTools genomic overlaps
+      GTEx tissue expression links
     Streamlit Interface
-      5 integrated tabs
+      4 integrated tabs
       Manual & NLP modes
-      Batch processing
+      Multi-question support
       Download results
     Advanced Capabilities
       Protein translation
+      Molecular weight and pI
       Reverse complement
       Restriction sites
       GC content analysis
-      Isoelectric point calculation
+      Codon usage statistics
   
   %%{init: { 'theme': 'base', 'primaryColor':'#42a5f5', 'primaryTextColor':'#fff', 'primaryBorderColor':'#1e88e5', 'secondBkgColor':'#66bb6a', 'tertiaryColor':'#ef5350', 'tertiaryTextColor':'#fff', 'textPlacement': 'center', 'mindmapBkg':'transparent', 'nodeBkg':'transparent'} }%%
 ```
@@ -263,39 +291,47 @@ mindmap
 ```mermaid
 graph TB
     subgraph Code["Source Code"]
-        APP["app.py<br/>Streamlit web interface"]
-        NLP["nlp_handler.py<br/>Ollama NLP integration"]
-        EMBOSS["emboss_wrapper.py<br/>EMBOSS tool wrapper"]
+        APP["app.py<br/>Streamlit web interface<br/>Multi-question UI"]
+        NLP["nlp_handler.py<br/>Google Gemini integration<br/>Multi-question parser"]
+        EMBOSS["emboss_wrapper.py<br/>EMBOSS + BEDTools + APIs<br/>1665 lines"]
         APP -->|imports| NLP
         APP -->|imports| EMBOSS
     end
     
-    subgraph Config["Configuration"]
-        REQ["requirements.txt<br/>Python dependencies"]
-        README["README.md<br/>Project documentation"]
-        GETTING["GETTING_STARTED.md<br/>Setup instructions"]
+    subgraph Config["Configuration & Docs"]
+        REQ["requirements.txt<br/>Python 3.12 deps"]
+        README["README.md<br/>Complete guide"]
+        COVERAGE["ASSIGNMENT_COVERAGE.md<br/>BME110 coverage"]
+        TESTS["TEST_QUERIES.md<br/>Test examples"]
     end
     
     subgraph Setup["Setup Scripts"]
         SETUP_SH["setup.sh<br/>Linux/macOS setup"]
-        SETUP_PS["setup_windows.ps1<br/>Windows setup"]
+        RUN_SH["run.sh<br/>Start script"]
     end
     
-    NLP -->|HTTP requests| Ollama[("Ollama<br/>gemma3:4b")]
-    EMBOSS -->|subprocess| Tools[("EMBOSS<br/>Tools")]
-    EMBOSS -->|HTTP requests| Ensembl[("Ensembl<br/>API")]
+    NLP -->|HTTPS| Gemini[("Google Gemini<br/>gemini-2.5-flash")]
+    EMBOSS -->|subprocess| Tools[("EMBOSS 6.6.0<br/>BEDTools 2.31.1")]
+    EMBOSS -->|HTTPS| Ensembl[("Ensembl<br/>REST API")]
+    EMBOSS -->|HTTPS| UCSC[("UCSC<br/>DAS & BLAT")]
+    EMBOSS -->|HTTPS| NCBI[("NCBI<br/>BLAST")]
+    EMBOSS -->|Links| GTEx[("GTEx<br/>Portal")]
     
     style APP fill:#42a5f5,stroke:#1976d2,color:#ffffff,font-weight:bold
     style NLP fill:#66bb6a,stroke:#2e7d32,color:#ffffff,font-weight:bold
     style EMBOSS fill:#ef5350,stroke:#c62828,color:#ffffff,font-weight:bold
     style REQ fill:#ab47bc,stroke:#6a1b9a,color:#ffffff,font-weight:bold
     style README fill:#ab47bc,stroke:#6a1b9a,color:#ffffff,font-weight:bold
-    style GETTING fill:#ab47bc,stroke:#6a1b9a,color:#ffffff,font-weight:bold
+    style COVERAGE fill:#ab47bc,stroke:#6a1b9a,color:#ffffff,font-weight:bold
+    style TESTS fill:#ab47bc,stroke:#6a1b9a,color:#ffffff,font-weight:bold
     style SETUP_SH fill:#ffa726,stroke:#f57c00,color:#ffffff,font-weight:bold
-    style SETUP_PS fill:#ffa726,stroke:#f57c00,color:#ffffff,font-weight:bold
-    style Ollama fill:#42a5f5,stroke:#1976d2,color:#ffffff,font-weight:bold
+    style RUN_SH fill:#ffa726,stroke:#f57c00,color:#ffffff,font-weight:bold
+    style Gemini fill:#ffd54f,stroke:#ffa000,color:#000000,font-weight:bold
     style Tools fill:#66bb6a,stroke:#2e7d32,color:#ffffff,font-weight:bold
     style Ensembl fill:#ef5350,stroke:#c62828,color:#ffffff,font-weight:bold
+    style UCSC fill:#ff7043,stroke:#d84315,color:#ffffff,font-weight:bold
+    style NCBI fill:#ffa726,stroke:#f57c00,color:#ffffff,font-weight:bold
+    style GTEx fill:#9ccc65,stroke:#689f38,color:#ffffff,font-weight:bold
 ```
 
 ## Technology Stack
@@ -303,55 +339,60 @@ graph TB
 ```mermaid
 graph LR
     subgraph Frontend["Frontend"]
-        Streamlit["Streamlit 1.48.1"]
+        Streamlit["Streamlit 1.51.0<br/>4 tabs, multi-question UI"]
     end
     
     subgraph Backend["Backend"]
-        Python["Python 3.9"]
-        Bio["BioPython 1.85"]
+        Python["Python 3.12.12<br/>~25% faster than 3.9"]
+        Bio["BioPython 1.86<br/>BLAST integration"]
+        Pandas["Pandas 2.3.3<br/>Data handling"]
+        Requests["Requests 2.32.3<br/>API calls"]
     end
     
     subgraph Tools["Bioinformatics Tools"]
         EMBOSS["EMBOSS 6.6.0<br/>258+ tools"]
+        BEDTools["BEDTools 2.31.1<br/>Genomic overlaps"]
     end
     
-    subgraph LLM["LLM Engine"]
-        Ollama["Ollama 0.6.0<br/>gemma3:4b Model"]
+    subgraph LLM["Cloud NLP"]
+        Gemini["Google Gemini API<br/>gemini-2.5-flash<br/>10 req/min free"]
     end
     
     subgraph APIs["External APIs"]
-        Ensembl["Ensembl REST API<br/>Gene/Transcript Data"]
-        UCSC["UCSC DAS API<br/>Genomic Regions"]
-        NCBI["NCBI Entrez<br/>Sequence Database"]
+        Ensembl["Ensembl REST API<br/>Gene/Transcript/CDS"]
+        UCSC["UCSC DAS & BLAT<br/>Genomic regions"]
+        NCBI["NCBI BLAST<br/>Sequence similarity"]
+        GTEx["GTEx Portal<br/>Expression links"]
     end
     
     subgraph Env["Environment"]
-        Conda["conda<br/>bioquery environment"]
+        Conda["conda bioquery312<br/>Python 3.12 env"]
     end
     
     Streamlit -.->|runs on| Python
     Python -->|imports| Bio
-    Python -->|subprocess calls| EMBOSS
-    Uses["uses"]
-    Python -->|HTTP requests| Uses
-    Uses -->|HTTP requests| Ollama
-    Python -->|HTTP requests| Ensembl
-    Python -->|HTTP requests| UCSC
-    Python -->|HTTP requests| NCBI
-    LLMLabel["interfaces<br/>with"]
-    Ollama -.-> LLMLabel
-    LLMLabel -.-> LLM
+    Python -->|imports| Pandas
+    Python -->|imports| Requests
+    Python -->|subprocess| EMBOSS
+    Python -->|subprocess| BEDTools
+    Python -->|HTTPS API calls| Gemini
+    Python -->|HTTPS| Ensembl
+    Python -->|HTTPS| UCSC
+    Python -->|HTTPS via BioPython| NCBI
+    Python -->|generates links| GTEx
     Conda -.->|manages| Python
     
     style Streamlit fill:#f57f17,stroke:#e65100,color:#ffffff,font-weight:bold
     style Python fill:#1565c0,stroke:#0d47a1,color:#ffffff,font-weight:bold
     style Bio fill:#2e7d32,stroke:#1b5e20,color:#ffffff,font-weight:bold
+    style Pandas fill:#00695c,stroke:#004d40,color:#ffffff,font-weight:bold
+    style Requests fill:#5e35b1,stroke:#4527a0,color:#ffffff,font-weight:bold
     style EMBOSS fill:#2e7d32,stroke:#1b5e20,color:#ffffff,font-weight:bold
-    style Ollama fill:#ffc400,stroke:#f57f17,color:#000000,font-weight:bold
+    style BEDTools fill:#7b1fa2,stroke:#4a148c,color:#ffffff,font-weight:bold
+    style Gemini fill:#ffd54f,stroke:#ffa000,color:#000000,font-weight:bold
     style Ensembl fill:#c62828,stroke:#b71c1c,color:#ffffff,font-weight:bold
     style UCSC fill:#d32f2f,stroke:#b71c1c,color:#ffffff,font-weight:bold
     style NCBI fill:#e57100,stroke:#d84315,color:#ffffff,font-weight:bold
+    style GTEx fill:#7cb342,stroke:#558b2f,color:#ffffff,font-weight:bold
     style Conda fill:#6a1b9a,stroke:#4a148c,color:#ffffff,font-weight:bold
-    style Uses fill:#ffffff,stroke:#cccccc,color:#000000,font-weight:bold
-    style LLMLabel fill:#ffffff,stroke:#cccccc,color:#000000,font-weight:bold
 ```
