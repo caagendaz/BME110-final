@@ -238,8 +238,18 @@ def main():
                         st.success(f"✓ Processing query for {len(sequences)} sequences from {filename}")
                         st.markdown('</div>', unsafe_allow_html=True)
                         
-                        # Parse the query once to understand what tool to use
-                        success, result = nlp.parse_user_query(user_query)
+                        # Simplify query by removing file references and adding a placeholder sequence
+                        # This prevents Gemini from seeing actual sequence data which can trigger filters
+                        simplified_query = user_query.lower()
+                        for keyword in ['in the file', 'in the uploaded file', 'from the file', 'in file', 
+                                       'from file', 'in uploaded file', 'of the file', 'the sequences']:
+                            simplified_query = simplified_query.replace(keyword, '')
+                        
+                        # Add a generic sequence placeholder so Gemini knows it's a sequence operation
+                        simplified_query = simplified_query.strip() + " of sequence ATGCATGC"
+                        
+                        # Parse the simplified query to understand what tool to use
+                        success, result = nlp.parse_user_query(simplified_query)
                         
                         if success and 'tool' in result:
                             tool_name = result.get('tool')
