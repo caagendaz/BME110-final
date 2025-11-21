@@ -636,11 +636,16 @@ def main():
                     col1, col2 = st.columns([2, 1])
                     
                     with col1:
+                        # Get all available tools dynamically
+                        available_tools = list(emboss.get_available_tools().keys())
                         batch_tool = st.selectbox(
                             "Choose analysis tool:",
-                            ["translate", "reverse", "gc", "info", "orf", "sixframe", "iep", "pepstats"],
+                            available_tools,
                             key="batch_tool"
                         )
+                        
+                        # Show tool description
+                        st.caption(emboss.get_available_tools()[batch_tool])
                     
                     with col2:
                         # Tool-specific parameters
@@ -649,6 +654,8 @@ def main():
                             params['frame'] = st.slider("Reading frame:", 1, 3, 1, key="batch_frame")
                         elif batch_tool == "orf":
                             params['min_size'] = st.slider("Min ORF size:", 10, 500, 100, key="batch_orf")
+                        elif batch_tool == "align":
+                            st.info("Note: Alignment requires 2 sequences. Will align consecutive pairs.")
                     
                     # Run analysis button
                     if st.button("🚀 Analyze All Sequences", type="primary", key="batch_run"):
@@ -665,26 +672,8 @@ def main():
                                 status_text.text(f"Processing {i+1}/{len(sequences)}: {header[:50]}...")
                                 
                                 try:
-                                    # Run the selected tool
-                                    if batch_tool == "translate":
-                                        result = emboss.translate_sequence(seq, params.get('frame', 1))
-                                    elif batch_tool == "reverse":
-                                        result = emboss.reverse_complement(seq)
-                                    elif batch_tool == "gc":
-                                        result = emboss.calculate_gc_content(seq)
-                                    elif batch_tool == "info":
-                                        result = emboss.get_sequence_info(seq)
-                                    elif batch_tool == "orf":
-                                        result = emboss.find_orfs(seq, params.get('min_size', 100))
-                                    elif batch_tool == "sixframe":
-                                        result = emboss.get_six_frame_translation(seq)
-                                    elif batch_tool == "iep":
-                                        result = emboss.calculate_isoelectric_point(seq)
-                                    elif batch_tool == "pepstats":
-                                        result = emboss.get_protein_stats(seq)
-                                    else:
-                                        result = f"Tool {batch_tool} not yet implemented for batch"
-                                    
+                                    # Use the generic run_tool method with sequence parameter
+                                    result = emboss.run_tool(batch_tool, sequence=seq, **params)
                                     all_results.append((header, result))
                                     
                                 except Exception as e:
@@ -737,14 +726,25 @@ GCTAGCTAGCTAGCTA
             
             st.markdown("### Supported Tools")
             st.write("""
+            **All EMBOSS tools are supported in batch mode!** Including:
+            
+            **Common DNA Tools:**
             - **translate**: Convert DNA to protein
             - **reverse**: Reverse complement of DNA
             - **gc**: Calculate GC content percentage  
-            - **info**: Sequence statistics (length, type, etc.)
             - **orf**: Find open reading frames
             - **sixframe**: Show all 6 translation frames
-            - **iep**: Calculate isoelectric point (proteins)
+            - **restriction**: Find restriction enzyme sites
+            - **cusp**: Codon usage statistics
+            
+            **Protein Analysis:**
             - **pepstats**: Protein statistics (molecular weight, amino acid composition)
+            - **iep**: Calculate isoelectric point
+            - **info**: General sequence information
+            
+            **And 250+ more EMBOSS tools** dynamically discovered from your system!
+            
+            Simply upload your FASTA file and select any tool from the dropdown.
             """)
     
     # TAB 5: Documentation
