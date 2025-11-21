@@ -173,11 +173,47 @@ def main():
         st.subheader("Ask a bioinformatics question")
         st.write("Describe what you want to do with your sequences in natural language.")
         
+        # Optional FASTA file upload
+        with st.expander("📁 Optional: Upload FASTA file to reference in your query"):
+            uploaded_fasta = st.file_uploader(
+                "Upload FASTA file (optional):",
+                type=["fasta", "fa", "faa", "fna", "txt"],
+                help="Upload a FASTA file, then reference it in your query like 'analyze the sequences in the file'",
+                key="nlp_fasta_upload"
+            )
+            
+            if uploaded_fasta:
+                content = uploaded_fasta.read().decode('utf-8')
+                sequences = parse_fasta(content)
+                
+                if sequences:
+                    st.success(f"✓ Loaded {len(sequences)} sequence(s) from {uploaded_fasta.name}")
+                    
+                    # Store in session state for use in queries
+                    st.session_state['uploaded_sequences'] = sequences
+                    st.session_state['uploaded_filename'] = uploaded_fasta.name
+                    
+                    # Show preview
+                    with st.expander("Preview sequences"):
+                        for i, (header, seq) in enumerate(sequences[:3], 1):
+                            st.text(f">{header}")
+                            st.text(f"{seq[:80]}{'...' if len(seq) > 80 else ''}")
+                        if len(sequences) > 3:
+                            st.caption(f"... and {len(sequences) - 3} more")
+                    
+                    st.info("💡 Now you can reference these sequences in your query!\n\n"
+                           "Examples:\n"
+                           "- 'Find the GC content of the sequences in the file'\n"
+                           "- 'Translate all sequences in the uploaded file'\n"
+                           "- 'Calculate protein stats for the sequences'")
+                else:
+                    st.warning("No sequences found. Make sure file is in FASTA format.")
+        
         col1, col2 = st.columns([3, 1])
         with col1:
             user_query = st.text_area(
                 "Your query:",
-                placeholder="E.g., 'Translate this DNA sequence to protein: ATGAAATTTCCC' or 'What's the reverse complement of ATGAAA?'",
+                placeholder="E.g., 'Translate this DNA sequence to protein: ATGAAATTTCCC' or 'Find GC content of the uploaded file'",
                 height=100,
                 key="nlp_query"
             )
@@ -188,8 +224,108 @@ def main():
         if submit_button and user_query.strip():
             with st.spinner("Processing your query with AI..."):
                 try:
-                    # Parse the query
-                    success, result = nlp.parse_user_query(user_query)
+                    # Check if query references uploaded file
+                    file_keywords = ['file', 'uploaded', 'fasta', 'sequences in', 'all sequences']
+                    references_file = any(keyword in user_query.lower() for keyword in file_keywords)
+                    has_uploaded = 'uploaded_sequences' in st.session_state
+                    
+                    if references_file and has_uploaded:
+                        # Process query for each sequence in uploaded file
+                        sequences = st.session_state['uploaded_sequences']
+                        filename = st.session_state.get('uploaded_filename', 'uploaded file')
+                        
+                        st.markdown('<div class="tool-box">', unsafe_allow_html=True)
+                        st.success(f"✓ Processing query for {len(sequences)} sequences from {filename}")
+                        st.markdown('</div>', unsafe_allow_html=True)
+                        
+                        # Parse the query once to understand what tool to use
+                        success, result = nlp.parse_user_query(user_query)
+                        
+                        if success and 'tool' in result:
+                            tool_name = result.get('tool')
+                            parameters = result.get('parameters', {})
+                            explanation = result.get('explanation', '')
+                            
+                            st.info(f"**Action:** {explanation}")
+                            st.write(f"**Tool:** {tool_name}")
+                            
+                            # Progress tracking
+                            progress_bar = st.progress(0)
+                            status_text = st.empty()
+                            
+                            all_results = []
+                            
+                            # Process each sequence
+                            for i, (header, seq) in enumerate(sequences):
+                                progress = (i + 1) / len(sequences)
+                                progress_bar.progress(progress)
+                                status_text.text(f"Processing {i+1}/{len(sequences)}: {header[:50]}...")
+                                
+                                try:
+                                    # Override sequence parameter with current sequence
+                                    params = parameters.copy()
+                                    params['sequence'] = seq
+                                    
+                                    # Execute tool
+                                    if tool_name == 'genome_query':
+                                        result_text = emboss.query_ucsc_genome(
+                                            params.get('genome', ''),
+                                            params.get('chrom', ''),
+                                            int(params.get('start', 0)),
+                                            int(params.get('end', 0))
+                                        )
+                                    elif tool_name == 'gene_query':
+                                        result_text = emboss.query_gene_info(
+                                            params.get('gene_name', ''),
+                                            params.get('genome', 'hg38'),
+                                            params.get('track', 'gencode')
+                                        )
+                                    else:
+                                        result_text = emboss.run_tool(tool_name, **params)
+                                    
+                                    all_results.append((header, result_text))
+                                    
+                                except Exception as e:
+                                    all_results.append((header, f"ERROR: {str(e)}"))
+                            
+                            status_text.text("✓ Analysis complete!")
+                            progress_bar.progress(1.0)
+                            
+                            # Display results
+                            st.markdown("---")
+                            st.subheader("📊 Results")
+                            
+                            for header, result_text in all_results:
+                                with st.expander(f"📄 {header}"):
+                                    st.code(result_text, language="text")
+                            
+                            # Download button
+                            combined_results = ""
+                            for header, result_text in all_results:
+                                combined_results += f"{'='*60}\n"
+                                combined_results += f"Sequence: {header}\n"
+                                combined_results += f"Tool: {tool_name}\n"
+                                combined_results += f"Query: {user_query}\n"
+                                combined_results += f"{'='*60}\n"
+                                combined_results += f"{result_text}\n\n"
+                            
+                            st.download_button(
+                                label="📥 Download All Results",
+                                data=combined_results,
+                                file_name=f"{tool_name}_results.txt",
+                                mime="text/plain",
+                                type="primary"
+                            )
+                        else:
+                            st.error("Could not parse query. Please be more specific about what analysis to perform.")
+                    
+                    elif references_file and not has_uploaded:
+                        st.warning("⚠️ Your query references a file, but no FASTA file has been uploaded. Please upload a file first using the section above.")
+                    
+                    else:
+                        # Normal query processing (no file reference)
+                        # Parse the query
+                        success, result = nlp.parse_user_query(user_query)
                     
                     if success:
                         # Check if this is multiple unrelated questions
