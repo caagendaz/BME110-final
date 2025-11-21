@@ -1,40 +1,158 @@
 """
-NLP Handler for BioQuery NoLocal
-Converts natural language requests to EMBOSS tool calls using Google Gemini
+NLP Handler for BioQuery
+Converts natural language requests to EMBOSS tool calls using Google Gemini or Ollama
 """
 
 import json
 from typing import Dict, Optional, Tuple
 import google.generativeai as genai
+import requests
 import re
 import os
 
 
 class NLPHandler:
-    """Convert natural language queries to EMBOSS tool commands using Google Gemini"""
+    """Convert natural language queries to EMBOSS tool commands using Google Gemini or Ollama"""
     
-    def __init__(self, api_key: Optional[str] = None, model: str = "gemini-2.5-flash"):
-        """Initialize the NLP handler with Google Gemini
+    def __init__(self, api_key: Optional[str] = None, model: str = "gemini-2.5-flash", mode: str = "cloud"):
+        """Initialize the NLP handler with Google Gemini or Ollama
         
         Args:
-            api_key: Google API key (or set GOOGLE_API_KEY environment variable)
-            model: Model name to use (default: gemini-2.5-flash)
+            api_key: Google API key (only for cloud mode)
+            model: Model name to use
+            mode: 'cloud' for Gemini or 'local' for Ollama
         """
+        self.mode = mode
         self.model_name = model
         
-        # Get API key from parameter or environment
-        self.api_key = api_key or os.getenv('GOOGLE_API_KEY')
-        if not self.api_key:
-            raise ValueError("Google API key required. Set GOOGLE_API_KEY environment variable or pass api_key parameter.")
+        if mode == 'cloud':
+            # Cloud mode - use Google Gemini
+            self.api_key = api_key or os.getenv('GOOGLE_API_KEY')
+            if not self.api_key:
+                raise ValueError("Google API key required for cloud mode. Set GOOGLE_API_KEY environment variable or pass api_key parameter.")
+            
+            # Configure Gemini with the stable v1 API
+            genai.configure(api_key=self.api_key)
+            self.model = genai.GenerativeModel(f"models/{model}")
+            self.ollama_url = None
+        else:
+            # Local mode - use Ollama
+            self.api_key = None
+            self.model = None
+            self.ollama_url = "http://localhost:11434"
+            self.model_name = "llama3.2:latest"  # Default Ollama model
         
-        # Configure Gemini with the stable v1 API
-        genai.configure(api_key=self.api_key)
+        # Build system prompt based on mode
+        self.system_prompt = self._build_system_prompt()
+    
+    def _build_system_prompt(self) -> str:
+        """Build system prompt based on mode (cloud vs local)"""
         
-        # Use models/ prefix for v1 API
-        self.model = genai.GenerativeModel(f"models/{model}")
+        base_prompt = """You are a bioinformatics assistant that helps users run EMBOSS analysis tools"""
         
-        # Define the system prompt for the LLM
-        self.system_prompt = """You are a bioinformatics assistant that helps users run EMBOSS analysis tools and query genomic databases.
+        if self.mode == 'cloud':
+            base_prompt += """ and query genomic databases."""
+        else:
+            base_prompt += "."
+        
+        base_prompt += """
+
+When a user asks a question about DNA/protein sequences"""
+        
+        if self.mode == 'cloud':
+            base_prompt += """, genomic regions, genes, or tools"""
+        
+        base_prompt += """, respond with a JSON object containing:
+
+FOR SINGLE OPERATIONS:
+1. "tool": the tool name"""
+        
+        if self.mode == 'cloud':
+            base_prompt += """ (EMBOSS tool, 'genome_query', or 'gene_query')"""
+        else:
+            base_prompt += """ (EMBOSS tool only)"""
+        
+        base_prompt += """
+2. "parameters": a dict with required parameters
+3. "explanation": a brief explanation of what will be done
+
+FOR MULTI-STEP OPERATIONS (when user says "then", "and then", "after that", "next", etc.):
+1. "steps": a list of step objects, each containing "tool" and "parameters"
+2. "explanation": overall explanation of the workflow
+3. "use_previous_result": whether step N+1 should use output from step N
+
+EMBOSS tools (use 'sequence' for raw DNA/protein sequences):
+- translate: Translate DNA to protein. Needs "sequence"
+- reverse: Reverse complement DNA. Needs "sequence"
+- orf: Find open reading frames. Needs "sequence" and optional "min_size"
+- align: Align two sequences. Needs "seq1" and "seq2"
+- pattern: Search for patterns. Needs "sequence" and optional "pattern"
+- restriction: Find restriction sites. Needs "sequence" and optional "enzyme"
+- shuffle: Shuffle sequence. Needs "sequence"
+- info: Get sequence info. Needs "sequence"
+- sixframe: Show all 6 reading frames. Needs "sequence"
+- gc: Calculate GC content. Needs "sequence"
+- pepstats: Calculate protein statistics (molecular weight, amino acid composition, charge, etc.). Needs "sequence" (protein). USE THIS for "molecular weight", "MW", "mass"
+- iep: Calculate isoelectric point (pI) of a protein. Needs "sequence" (protein). USE THIS for "isoelectric point", "pI"
+- cusp: Calculate codon usage statistics. Needs "sequence" (DNA). USE THIS for "codon usage"
+"""
+        
+        if self.mode == 'cloud':
+            base_prompt += """
+CLOUD-ONLY FEATURES:
+- blast: Search NCBI databases for similar sequences. Needs "sequence" and optional "blast_type", "database", "max_results"
+- blastn: DNA BLAST search. Needs "sequence"
+- blastp: Protein BLAST search. Needs "sequence"  
+- blastx: DNA to protein BLAST search. Needs "sequence"
+- blat: UCSC BLAT search. Needs "sequence" and optional "database"
+- genome_query: Query UCSC Genome Browser. Needs "genome", "chrom", "start", "end"
+- gene_query: Look up gene information. Needs "gene_name" and optional "genome" (default hg38)
+- gtex: Get tissue expression data. Needs "gene_name" and optional "top_n"
+- ucsc_gene: Get gene position from UCSC. Needs "gene_name"
+- bedtools: Find overlapping genomic regions. Needs "file_a" and "file_b"
+
+GENE SYMBOL SUPPORT (cloud only):
+- If user mentions a GENE NAME/SYMBOL (like TP53, BRCA1, ALKBH1): use gene_name parameter with appropriate tool
+- For gene structure questions: use gene_query
+- To apply tools to genes: use tool with gene_name parameter
+"""
+        
+        base_prompt += """
+Decision logic:
+- IMPORTANT PROTEIN ANALYSIS: If "molecular weight", "mass", "MW" -> use pepstats (NOT info)
+- If "isoelectric point", "pI", "charge" -> use iep (NOT info)
+- If "codon usage", "codon frequency" -> use cusp
+- If raw DNA/RNA/protein sequences (ATGCCC, MKLA...) -> use appropriate EMBOSS tool with sequence parameter
+"""
+        
+        if self.mode == 'cloud':
+            base_prompt += """- If GENE NAME/SYMBOL mentioned -> use gene_query or tool with gene_name parameter
+- If chromosome/genomic position -> use genome_query
+- If "BLAST", "search", "similar", "homologous" -> use blast/blastn/blastp
+"""
+        
+        base_prompt += """- Otherwise use appropriate EMBOSS tool
+
+Examples:
+- "Translate ATGCCC" -> translate tool with sequence: ATGCCC
+- "Calculate GC content of ATGCATGC" -> gc tool with sequence: ATGCATGC
+- "What's the reverse complement of ATGC?" -> reverse tool with sequence: ATGC
+- "Calculate molecular weight of MKTAYIAK" -> pepstats tool with sequence: MKTAYIAK
+- "Isoelectric point of MKTAYIAK?" -> iep tool with sequence: MKTAYIAK
+"""
+        
+        if self.mode == 'cloud':
+            base_prompt += """- "Find gene info for TP53" -> gene_query with gene_name: TP53
+- "Translate BRCA1" -> translate tool with gene_name: BRCA1
+- "BLAST this sequence: ATGCGATCG" -> blast tool with sequence: ATGCGATCG
+"""
+        
+        return base_prompt
+    
+    def _build_legacy_system_prompt(self) -> str:
+        """Original full system prompt for cloud mode (kept for reference)"""
+        
+        return """You are a bioinformatics assistant that helps users run EMBOSS analysis tools and query genomic databases.
 
 When a user asks a question about DNA/protein sequences, genomic regions, genes, or tools, respond with a JSON object containing:
 
@@ -210,25 +328,12 @@ Always respond with ONLY valid JSON, no other text. Start with { and end with }"
                 # Parse each question independently
                 full_prompt = f"{self.system_prompt}\n\nUser query: {question}\n\nRespond with JSON only:"
                 
-                response = self.model.generate_content(
-                    full_prompt,
-                    generation_config=genai.types.GenerationConfig(
-                        temperature=0.1,
-                        max_output_tokens=1024,
-                    )
-                )
+                # Call appropriate LLM based on mode
+                if self.mode == 'cloud':
+                    response_text = self._call_gemini(full_prompt)
+                else:
+                    response_text = self._call_ollama(full_prompt)
                 
-                response_text = response.text.strip()
-                
-                # Clean markdown
-                if response_text.startswith('```'):
-                    response_text = response_text.split('```')[1]
-                    if response_text.startswith('json'):
-                        response_text = response_text[4:]
-                if response_text.endswith('```'):
-                    response_text = response_text[:-3]
-                
-                response_text = response_text.strip()
                 parsed = json.loads(response_text)
                 
                 # Clean up multi-step parameters if needed
@@ -282,30 +387,19 @@ Always respond with ONLY valid JSON, no other text. Start with { and end with }"
             # Create the full prompt with system instructions
             full_prompt = f"{self.system_prompt}\n\nUser query: {query}\n\nRespond with JSON only:"
             
-            # Call Gemini API
-            response = self.model.generate_content(
-                full_prompt,
-                generation_config=genai.types.GenerationConfig(
-                    temperature=0.1,  # Low temperature for consistent structured output
-                    max_output_tokens=1024,
-                )
-            )
-            
-            # Extract the response text
-            response_text = response.text.strip()
-            
-            # Remove markdown code blocks if present
-            if response_text.startswith('```'):
-                response_text = response_text.split('```')[1]
-                if response_text.startswith('json'):
-                    response_text = response_text[4:]
-            if response_text.endswith('```'):
-                response_text = response_text[:-3]
-            
-            response_text = response_text.strip()
+            # Call appropriate LLM based on mode
+            if self.mode == 'cloud':
+                response_text = self._call_gemini(full_prompt)
+            else:
+                response_text = self._call_ollama(full_prompt)
             
             # Parse JSON response
-            result = json.loads(response_text)
+            try:
+                result = json.loads(response_text)
+            except json.JSONDecodeError as e:
+                # If JSON parsing fails, log the problematic response for debugging
+                print(f"DEBUG - Failed to parse JSON. Raw response:\n{response_text}\n")
+                raise
             
             # Validate the response - can be either single tool or multi-step
             if 'steps' in result:
@@ -511,24 +605,115 @@ Always respond with ONLY valid JSON, no other text. Start with { and end with }"
         return response
     
     def test_connection(self) -> bool:
-        """Test if Gemini API connection is working
+        """Test if LLM connection is working
         
         Returns:
             bool: True if connection successful
         """
         try:
-            # Try a simple test query to verify the API key works
-            response = self.model.generate_content("Test")
-            if response:
-                print(f"✓ Connected to Google Gemini")
-                print(f"✓ Model: {self.model_name}")
-                return True
+            if self.mode == 'cloud':
+                # Test Gemini connection
+                response = self.model.generate_content("Test")
+                if response:
+                    print(f"✓ Connected to Google Gemini")
+                    print(f"✓ Model: {self.model_name}")
+                    return True
+                else:
+                    print("✗ No response from Gemini")
+                    return False
             else:
-                print("✗ No response from Gemini")
-                return False
+                # Test Ollama connection
+                response = requests.get(f"{self.ollama_url}/api/tags", timeout=5)
+                response.raise_for_status()
+                models = response.json().get('models', [])
+                print(f"✓ Connected to Ollama")
+                print(f"✓ Model: {self.model_name}")
+                print(f"✓ Available models: {len(models)}")
+                return True
         except Exception as e:
-            print(f"✗ Failed to connect to Gemini: {str(e)}")
+            if self.mode == 'cloud':
+                print(f"✗ Failed to connect to Gemini: {str(e)}")
+            else:
+                print(f"✗ Failed to connect to Ollama: {str(e)}")
+                print("  Make sure Ollama is running with: ollama serve")
             return False
+    
+    def _call_gemini(self, prompt: str) -> str:
+        """Call Google Gemini API
+        
+        Args:
+            prompt: Full prompt with system instructions
+        
+        Returns:
+            Cleaned response text
+        """
+        response = self.model.generate_content(
+            prompt,
+            generation_config=genai.types.GenerationConfig(
+                temperature=0.1,
+                max_output_tokens=1024,
+            )
+        )
+        
+        response_text = response.text.strip()
+        
+        # Remove markdown code blocks if present
+        if response_text.startswith('```'):
+            response_text = response_text.split('```')[1]
+            if response_text.startswith('json'):
+                response_text = response_text[4:]
+        if response_text.endswith('```'):
+            response_text = response_text[:-3]
+        
+        response_text = response_text.strip()
+        
+        # Additional cleanup for common JSON issues
+        response_text = response_text.replace('\\"', '"')
+        response_text = re.sub(r',(\s*[}\]])', r'\1', response_text)
+        
+        return response_text
+    
+    def _call_ollama(self, prompt: str) -> str:
+        """Call Ollama API
+        
+        Args:
+            prompt: Full prompt with system instructions
+        
+        Returns:
+            Cleaned response text
+        """
+        try:
+            response = requests.post(
+                f"{self.ollama_url}/api/generate",
+                json={
+                    "model": self.model_name,
+                    "prompt": prompt,
+                    "stream": False,
+                    "format": "json",
+                    "options": {
+                        "temperature": 0.1,
+                        "num_predict": 1024
+                    }
+                },
+                timeout=60
+            )
+            
+            response.raise_for_status()
+            result = response.json()
+            response_text = result.get('response', '').strip()
+            
+            # Clean markdown if present
+            if response_text.startswith('```'):
+                response_text = response_text.split('```')[1]
+                if response_text.startswith('json'):
+                    response_text = response_text[4:]
+            if response_text.endswith('```'):
+                response_text = response_text[:-3]
+            
+            return response_text.strip()
+            
+        except requests.exceptions.RequestException as e:
+            raise Exception(f"Failed to connect to Ollama: {str(e)}. Make sure Ollama is running with: ollama serve")
 
 
 # Example usage
@@ -536,10 +721,10 @@ if __name__ == "__main__":
     print("=== BioQuery NLP Handler ===\n")
     
     # Initialize handler
-    handler = NLPHandler()
+    handler = NLPHandler(mode='local')
     
     # Test connection
-    print("Testing Ollama connection...")
+    print("Testing LLM connection...")
     if handler.test_connection():
         print("\n" + "="*50 + "\n")
         

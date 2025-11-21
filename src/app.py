@@ -7,6 +7,7 @@ import streamlit as st
 from emboss_wrapper import EMBOSSWrapper
 from nlp_handler import NLPHandler
 import traceback
+import os
 
 
 # Page configuration
@@ -16,6 +17,36 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Initialize session state for mode selection
+if 'mode' not in st.session_state:
+    st.session_state.mode = 'cloud'  # Default to cloud mode
+
+# Mode selector in sidebar
+with st.sidebar:
+    st.title("⚙️ Configuration")
+    
+    mode = st.radio(
+        "Select Mode:",
+        options=['cloud', 'local'],
+        format_func=lambda x: "☁️ Cloud Mode (Gemini + APIs)" if x == 'cloud' else "🏠 Local Mode (Ollama + EMBOSS only)",
+        index=0 if st.session_state.mode == 'cloud' else 1,
+        help="Cloud mode uses Google Gemini API and external databases. Local mode uses Ollama and only local EMBOSS tools."
+    )
+    
+    # Update session state if changed
+    if mode != st.session_state.mode:
+        st.session_state.mode = mode
+        st.rerun()
+    
+    st.markdown("---")
+    
+    if mode == 'cloud':
+        st.info("**Cloud Mode Features:**\n- Google Gemini AI\n- NCBI BLAST\n- Ensembl API\n- UCSC Genome Browser\n- GTEx Expression\n- All EMBOSS tools")
+    else:
+        st.info("**Local Mode Features:**\n- Ollama (local LLM)\n- EMBOSS tools only\n- No internet required\n- Complete privacy")
+    
+    st.markdown("---")
 
 # Custom CSS for better styling
 st.markdown("""
@@ -52,10 +83,14 @@ st.markdown("""
 
 
 @st.cache_resource
-def initialize_tools():
-    """Initialize EMBOSS and NLP tools (cached for performance)"""
+def initialize_tools(mode='cloud'):
+    """Initialize EMBOSS and NLP tools (cached for performance)
+    
+    Args:
+        mode: 'cloud' for Gemini API or 'local' for Ollama
+    """
     emboss = EMBOSSWrapper()
-    nlp = NLPHandler()
+    nlp = NLPHandler(mode=mode)
     return emboss, nlp
 
 
@@ -102,20 +137,27 @@ def main():
     if 'sequences' not in st.session_state:
         st.session_state.sequences = {}
     
+    # Get current mode from session state
+    current_mode = st.session_state.mode
+    
     # Header
     col1, col2 = st.columns([1, 4])
     with col1:
         st.title("🧬")
     with col2:
-        st.title("BioQuery NoLocal")
-        st.caption("Cloud-powered natural language bioinformatics analysis tool")
+        if current_mode == 'cloud':
+            st.title("BioQuery NoLocal")
+            st.caption("☁️ Cloud-powered natural language bioinformatics analysis tool")
+        else:
+            st.title("BioQuery Local")
+            st.caption("🏠 Privacy-first local bioinformatics analysis tool")
     
     st.markdown("---")
     
-    # Initialize tools
+    # Initialize tools with selected mode
     with st.spinner("Initializing bioinformatics tools..."):
         try:
-            emboss, nlp = initialize_tools()
+            emboss, nlp = initialize_tools(mode=current_mode)
             emboss_ready = emboss.check_emboss()
             nlp_ready = nlp.test_connection()
         except Exception as e:
@@ -124,7 +166,7 @@ def main():
     
     # Sidebar with status and info
     with st.sidebar:
-        st.header("⚙️ System Status")
+        st.header("📊 System Status")
         
         # Status indicators
         col1, col2 = st.columns(2)
@@ -135,14 +177,25 @@ def main():
                 st.error("✗ EMBOSS")
         with col2:
             if nlp_ready:
-                st.success("✓ Gemini")
+                if current_mode == 'cloud':
+                    st.success("✓ Gemini")
+                else:
+                    st.success("✓ Ollama")
             else:
-                st.error("✗ Gemini")
+                if current_mode == 'cloud':
+                    st.error("✗ Gemini")
+                else:
+                    st.error("✗ Ollama")
         
         st.markdown("---")
         
         # Available tools
         st.subheader("📊 Available Tools")
+        if current_mode == 'local':
+            st.caption("Local mode: EMBOSS tools only")
+        else:
+            st.caption("Cloud mode: EMBOSS + external APIs")
+        
         tools = emboss.get_available_tools()
         for tool_name, description in tools.items():
             with st.expander(f"**{tool_name}**"):
@@ -152,21 +205,41 @@ def main():
         
         # About
         st.subheader("ℹ️ About")
-        st.info(
-            "BioQuery NoLocal uses:\n"
-            "- **EMBOSS**: Bioinformatics analysis\n"
-            "- **Google Gemini**: AI for natural language\n"
-            "- **Streamlit**: Interactive interface"
-        )
+        if current_mode == 'cloud':
+            st.info(
+                "BioQuery NoLocal uses:\n"
+                "- **EMBOSS**: Bioinformatics analysis\n"
+                "- **Google Gemini**: AI for natural language\n"
+                "- **External APIs**: BLAST, Ensembl, UCSC, GTEx\n"
+                "- **Streamlit**: Interactive interface"
+            )
+        else:
+            st.info(
+                "BioQuery Local uses:\n"
+                "- **EMBOSS**: Bioinformatics analysis\n"
+                "- **Ollama**: Local AI (no internet)\n"
+                "- **Streamlit**: Interactive interface\n\n"
+                "✓ Complete privacy - all processing is local"
+            )
     
     # Main interface tabs
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "🤖 Natural Language Query",
-        "🔧 Manual Tool Selection",
-        "🌐 Genome Browser Query",
-        "📁 FASTA Upload & Batch",
-        "📚 Documentation"
-    ])
+    if current_mode == 'cloud':
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+            "🤖 Natural Language Query",
+            "🔧 Manual Tool Selection",
+            "🌐 Genome Browser Query",
+            "📁 FASTA Upload & Batch",
+            "📖 Documentation"
+        ])
+    else:
+        # Local mode: hide genome browser tab (requires internet)
+        tab1, tab2, tab4, tab5 = st.tabs([
+            "🤖 Natural Language Query",
+            "🔧 Manual Tool Selection",
+            "📁 FASTA Upload & Batch",
+            "📖 Documentation"
+        ])
+        tab3 = None  # No genome browser in local mode
     
     # TAB 1: Natural Language Query
     with tab1:
@@ -224,12 +297,116 @@ def main():
         if submit_button and user_query.strip():
             with st.spinner("Processing your query with AI..."):
                 try:
+                    # First, check if there's a long sequence in the query (FASTA or plain sequence)
+                    # This prevents sending sequences to Gemini which triggers content filters
+                    extracted_sequence = None
+                    cleaned_query = user_query
+                    
+                    # Look for FASTA format (>header followed by sequence)
+                    if '>' in user_query:
+                        parts = user_query.split('>', 1)
+                        if len(parts) == 2:
+                            # Extract the instruction before the sequence
+                            cleaned_query = parts[0].strip()
+                            # Parse the FASTA part
+                            fasta_content = '>' + parts[1]
+                            header_end = fasta_content.find('\n')
+                            if header_end > 0:
+                                sequence = fasta_content[header_end:].replace('\n', '').replace(' ', '').strip()
+                                if len(sequence) > 20:  # Only consider it a sequence if it's substantial
+                                    extracted_sequence = sequence
+                                    # If there's no instruction, default to showing what operations are available
+                                    if not cleaned_query:
+                                        cleaned_query = "analyze this sequence"
+                    
+                    # Look for long continuous sequences without FASTA format
+                    if not extracted_sequence:
+                        import re
+                        # Find sequences that are at least 30 characters of valid nucleotides
+                        seq_match = re.search(r'\b([ATCGNatcgn]{30,})\b', user_query)
+                        if seq_match:
+                            extracted_sequence = seq_match.group(1).upper()
+                            # Remove the sequence from the query
+                            cleaned_query = user_query.replace(seq_match.group(0), '').strip()
+                            if not cleaned_query:
+                                cleaned_query = "analyze this sequence"
+                    
                     # Check if query references uploaded file
                     file_keywords = ['file', 'uploaded', 'fasta', 'sequences in', 'all sequences']
                     references_file = any(keyword in user_query.lower() for keyword in file_keywords)
                     has_uploaded = 'uploaded_sequences' in st.session_state
                     
-                    if references_file and has_uploaded:
+                    # If we extracted a sequence from the query, handle it specially
+                    if extracted_sequence and not references_file:
+                        st.markdown('<div class="tool-box">', unsafe_allow_html=True)
+                        st.success(f"✓ Detected sequence in query ({len(extracted_sequence)} bp)")
+                        st.markdown('</div>', unsafe_allow_html=True)
+                        
+                        # Detect operations from the cleaned query
+                        query_lower = cleaned_query.lower()
+                        detected_operations = []
+                        detected_tools = set()
+                        
+                        # Define keyword mappings to tools (same as file processing)
+                        tool_keywords = [
+                            ('gc content', 'gc_content', {}, 'Calculate GC content'),
+                            ('reverse complement', 'reverse', {}, 'Reverse complement'),
+                            ('isoelectric point', 'iep', {}, 'Calculate isoelectric point'),
+                            ('molecular weight', 'pepstats', {}, 'Get protein statistics including molecular weight'),
+                            ('protein stats', 'pepstats', {}, 'Get protein statistics'),
+                            ('open reading', 'orf', {}, 'Find open reading frames'),
+                            ('gc', 'gc_content', {}, 'Calculate GC content'),
+                            ('translate', 'translate', {}, 'Translate to protein'),
+                            ('reverse', 'reverse', {}, 'Reverse complement'),
+                            ('isoelectric', 'iep', {}, 'Calculate isoelectric point'),
+                            ('pepstats', 'pepstats', {}, 'Get protein statistics'),
+                            ('orf', 'orf', {}, 'Find open reading frames'),
+                        ]
+                        
+                        # Check which operations are mentioned
+                        for keyword, tool, params, explanation in tool_keywords:
+                            if keyword in query_lower and tool not in detected_tools:
+                                detected_operations.append({
+                                    'tool': tool,
+                                    'parameters': params.copy(),
+                                    'explanation': explanation
+                                })
+                                detected_tools.add(tool)
+                        
+                        if detected_operations:
+                            st.info(f"**Detected {len(detected_operations)} operation(s)**")
+                            
+                            # Process each detected operation
+                            for op_idx, op_info in enumerate(detected_operations, 1):
+                                if len(detected_operations) > 1:
+                                    st.markdown(f"### Operation {op_idx}: {op_info['explanation']}")
+                                else:
+                                    st.info(f"**Action:** {op_info['explanation']}")
+                                
+                                st.write(f"**Tool:** {op_info['tool']}")
+                                
+                                try:
+                                    # Execute tool with the extracted sequence
+                                    params = op_info['parameters'].copy()
+                                    params['sequence'] = extracted_sequence
+                                    result = emboss.run_tool(op_info['tool'], **params)
+                                    
+                                    st.markdown("#### Results:")
+                                    st.code(result, language="text")
+                                    
+                                except Exception as e:
+                                    st.error(f"Error: {str(e)}")
+                                
+                                if len(detected_operations) > 1 and op_idx < len(detected_operations):
+                                    st.markdown("---")
+                        else:
+                            st.warning("⚠️ Couldn't detect specific operations. Try: 'get gc content', 'translate', 'reverse complement', 'isoelectric point'")
+                        
+                        # Mark as handled so we don't show error message below
+                        success = True
+                        result = {'handled': True}
+                    
+                    elif references_file and has_uploaded:
                         # Process query for each sequence in uploaded file
                         sequences = st.session_state['uploaded_sequences']
                         filename = st.session_state.get('uploaded_filename', 'uploaded file')
@@ -238,98 +415,219 @@ def main():
                         st.success(f"✓ Processing query for {len(sequences)} sequences from {filename}")
                         st.markdown('</div>', unsafe_allow_html=True)
                         
-                        # Simplify query by removing file references and adding a placeholder sequence
-                        # This prevents Gemini from seeing actual sequence data which can trigger filters
-                        simplified_query = user_query.lower()
-                        for keyword in ['in the file', 'in the uploaded file', 'from the file', 'in file', 
-                                       'from file', 'in uploaded file', 'of the file', 'the sequences']:
-                            simplified_query = simplified_query.replace(keyword, '')
+                        # For file-based queries, try to detect operations directly to avoid Gemini filters
+                        query_lower = user_query.lower()
+                        detected_operations = []
+                        detected_tools = set()  # Track which tools we've already added
                         
-                        # Add a generic sequence placeholder so Gemini knows it's a sequence operation
-                        simplified_query = simplified_query.strip() + " of sequence ATGCATGC"
+                        # Define keyword mappings to tools (order matters - longer phrases first)
+                        tool_keywords = [
+                            ('gc content', 'gc_content', {}, 'Calculate GC content'),
+                            ('reverse complement', 'reverse', {}, 'Reverse complement'),
+                            ('isoelectric point', 'iep', {}, 'Calculate isoelectric point'),
+                            ('molecular weight', 'pepstats', {}, 'Get protein statistics including molecular weight'),
+                            ('protein stats', 'pepstats', {}, 'Get protein statistics'),
+                            ('open reading', 'orf', {}, 'Find open reading frames'),
+                            ('gc', 'gc_content', {}, 'Calculate GC content'),
+                            ('translate', 'translate', {}, 'Translate to protein'),
+                            ('reverse', 'reverse', {}, 'Reverse complement'),
+                            ('isoelectric', 'iep', {}, 'Calculate isoelectric point'),
+                            ('pepstats', 'pepstats', {}, 'Get protein statistics'),
+                            ('orf', 'orf', {}, 'Find open reading frames'),
+                        ]
                         
-                        # Parse the simplified query to understand what tool to use
-                        success, result = nlp.parse_user_query(simplified_query)
+                        # Check which operations are mentioned (avoid duplicates)
+                        for keyword, tool, params, explanation in tool_keywords:
+                            if keyword in query_lower and tool not in detected_tools:
+                                detected_operations.append({
+                                    'tool': tool,
+                                    'parameters': params.copy(),
+                                    'explanation': explanation
+                                })
+                                detected_tools.add(tool)
                         
-                        if success and 'tool' in result:
-                            tool_name = result.get('tool')
-                            parameters = result.get('parameters', {})
-                            explanation = result.get('explanation', '')
+                        # If we detected operations directly, use them instead of calling Gemini
+                        if detected_operations:
+                            st.info(f"**Detected {len(detected_operations)} operation(s)**")
                             
-                            st.info(f"**Action:** {explanation}")
-                            st.write(f"**Tool:** {tool_name}")
-                            
-                            # Progress tracking
-                            progress_bar = st.progress(0)
-                            status_text = st.empty()
-                            
-                            all_results = []
-                            
-                            # Process each sequence
-                            for i, (header, seq) in enumerate(sequences):
-                                progress = (i + 1) / len(sequences)
-                                progress_bar.progress(progress)
-                                status_text.text(f"Processing {i+1}/{len(sequences)}: {header[:50]}...")
+                            # Process each detected operation
+                            for op_idx, op_info in enumerate(detected_operations, 1):
+                                if len(detected_operations) > 1:
+                                    st.markdown(f"### Operation {op_idx}: {op_info['explanation']}")
+                                else:
+                                    st.info(f"**Action:** {op_info['explanation']}")
                                 
-                                try:
-                                    # Override sequence parameter with current sequence
-                                    params = parameters.copy()
-                                    params['sequence'] = seq
+                                st.write(f"**Tool:** {op_info['tool']}")
+                                
+                                # Progress tracking
+                                progress_bar = st.progress(0)
+                                status_text = st.empty()
+                                
+                                all_results = []
+                                
+                                # Process each sequence
+                                for i, (header, seq) in enumerate(sequences):
+                                    progress = (i + 1) / len(sequences)
+                                    progress_bar.progress(progress)
+                                    status_text.text(f"Processing {i+1}/{len(sequences)}: {header[:50]}...")
                                     
-                                    # Execute tool
-                                    if tool_name == 'genome_query':
-                                        result_text = emboss.query_ucsc_genome(
-                                            params.get('genome', ''),
-                                            params.get('chrom', ''),
-                                            int(params.get('start', 0)),
-                                            int(params.get('end', 0))
-                                        )
-                                    elif tool_name == 'gene_query':
-                                        result_text = emboss.query_gene_info(
-                                            params.get('gene_name', ''),
-                                            params.get('genome', 'hg38'),
-                                            params.get('track', 'gencode')
-                                        )
-                                    else:
-                                        result_text = emboss.run_tool(tool_name, **params)
+                                    try:
+                                        # Override sequence parameter with current sequence
+                                        params = op_info['parameters'].copy()
+                                        params['sequence'] = seq
+                                        
+                                        # Execute tool
+                                        result = emboss.run_tool(op_info['tool'], **params)
+                                        all_results.append({
+                                            'header': header,
+                                            'result': result
+                                        })
+                                    except Exception as e:
+                                        all_results.append({
+                                            'header': header,
+                                            'result': f"Error: {str(e)}"
+                                        })
+                                
+                                progress_bar.progress(1.0)
+                                status_text.text("✓ Complete!")
+                                
+                                # Display results
+                                st.markdown("#### Results:")
+                                for item in all_results:
+                                    with st.expander(f"📄 {item['header']}", expanded=(len(all_results) == 1)):
+                                        st.text(item['result'])
+                                
+                                if len(detected_operations) > 1:
+                                    st.markdown("---")
+                        
+                        # Only proceed with Gemini parsing if we didn't detect operations directly
+                        if not detected_operations:
+                            # Fall back to Gemini if we couldn't detect operations directly
+                            # Simplify query by removing file references and adding a placeholder sequence
+                            # This prevents Gemini from seeing actual sequence data which can trigger filters
+                            simplified_query = user_query.lower()
+                            
+                            # Remove file references
+                            for keyword in ['in the file', 'in the uploaded file', 'from the file', 'in file', 
+                                           'from file', 'in uploaded file', 'of the file', 'the sequences',
+                                           'of the uploaded', 'the uploaded', 'uploaded', 'of the sequence',
+                                           'the sequence in']:
+                                simplified_query = simplified_query.replace(keyword, '')
+                            
+                            # Clean up extra spaces and "and" at the beginning
+                            simplified_query = ' '.join(simplified_query.split())
+                            if simplified_query.startswith('and '):
+                                simplified_query = simplified_query[4:]
+                            
+                            # For multi-operation queries, split them into numbered questions
+                            # This uses the existing multi-question parsing which is more reliable
+                            if ' and the ' in simplified_query or ' and ' in simplified_query:
+                                # Split on "and the" or "and"
+                                if ' and the ' in simplified_query:
+                                    parts = simplified_query.split(' and the ')
+                                else:
+                                    parts = simplified_query.split(' and ')
+                                
+                                # Format as numbered questions if we have multiple parts
+                                if len(parts) >= 2:
+                                    numbered_questions = []
+                                    for i, part in enumerate(parts, 1):
+                                        part = part.strip()
+                                        # Ensure each part has a verb
+                                        if not any(verb in part for verb in ['find', 'get', 'calculate', 'show', 'translate', 'determine']):
+                                            part = f"find {part}"
+                                        numbered_questions.append(f"{i}. {part}")
+                                    simplified_query = " ".join(numbered_questions)
+                            
+                            # Add a generic sequence placeholder so Gemini knows it's a sequence operation
+                            if "sequence" not in simplified_query:
+                                simplified_query = simplified_query.strip() + " of ATGC"
+                            
+                            # Parse the simplified query to understand what tool to use
+                            success, result = nlp.parse_user_query(simplified_query)
+                            
+                            if success and 'tool' in result:
+                                tool_name = result.get('tool')
+                                parameters = result.get('parameters', {})
+                                explanation = result.get('explanation', '')
+                                
+                                st.info(f"**Action:** {explanation}")
+                                st.write(f"**Tool:** {tool_name}")
+                                
+                                # Progress tracking
+                                progress_bar = st.progress(0)
+                                status_text = st.empty()
+                                
+                                all_results = []
+                                
+                                # Process each sequence
+                                for i, (header, seq) in enumerate(sequences):
+                                    progress = (i + 1) / len(sequences)
+                                    progress_bar.progress(progress)
+                                    status_text.text(f"Processing {i+1}/{len(sequences)}: {header[:50]}...")
                                     
-                                    all_results.append((header, result_text))
-                                    
-                                except Exception as e:
-                                    all_results.append((header, f"ERROR: {str(e)}"))
-                            
-                            status_text.text("✓ Analysis complete!")
-                            progress_bar.progress(1.0)
-                            
-                            # Display results
-                            st.markdown("---")
-                            st.subheader("📊 Results")
-                            
-                            for header, result_text in all_results:
-                                with st.expander(f"📄 {header}"):
-                                    st.code(result_text, language="text")
-                            
-                            # Download button
-                            combined_results = ""
-                            for header, result_text in all_results:
-                                combined_results += f"{'='*60}\n"
-                                combined_results += f"Sequence: {header}\n"
-                                combined_results += f"Tool: {tool_name}\n"
-                                combined_results += f"Query: {user_query}\n"
-                                combined_results += f"{'='*60}\n"
-                                combined_results += f"{result_text}\n\n"
-                            
-                            st.download_button(
-                                label="📥 Download All Results",
-                                data=combined_results,
-                                file_name=f"{tool_name}_results.txt",
-                                mime="text/plain",
-                                type="primary"
-                            )
-                        else:
-                            st.error("Could not parse query. Please be more specific about what analysis to perform.")
+                                    try:
+                                        # Override sequence parameter with current sequence
+                                        params = parameters.copy()
+                                        params['sequence'] = seq
+                                        
+                                        # Execute tool
+                                        if tool_name == 'genome_query':
+                                            result_text = emboss.query_ucsc_genome(
+                                                params.get('genome', ''),
+                                                params.get('chrom', ''),
+                                                int(params.get('start', 0)),
+                                                int(params.get('end', 0))
+                                            )
+                                        elif tool_name == 'gene_query':
+                                            result_text = emboss.query_gene_info(
+                                                params.get('gene_name', ''),
+                                                params.get('genome', 'hg38'),
+                                                params.get('track', 'gencode')
+                                            )
+                                        else:
+                                            result_text = emboss.run_tool(tool_name, **params)
+                                        
+                                        all_results.append((header, result_text))
+                                        
+                                    except Exception as e:
+                                        all_results.append((header, f"ERROR: {str(e)}"))
+                                
+                                status_text.text("✓ Analysis complete!")
+                                progress_bar.progress(1.0)
+                                
+                                # Display results
+                                st.markdown("---")
+                                st.subheader("📊 Results")
+                                
+                                for header, result_text in all_results:
+                                    with st.expander(f"📄 {header}"):
+                                        st.code(result_text, language="text")
+                                
+                                # Download button
+                                combined_results = ""
+                                for header, result_text in all_results:
+                                    combined_results += f"{'='*60}\n"
+                                    combined_results += f"Sequence: {header}\n"
+                                    combined_results += f"Tool: {tool_name}\n"
+                                    combined_results += f"Query: {user_query}\n"
+                                    combined_results += f"{'='*60}\n"
+                                    combined_results += f"{result_text}\n\n"
+                                
+                                st.download_button(
+                                    label="📥 Download All Results",
+                                    data=combined_results,
+                                    file_name=f"{tool_name}_results.txt",
+                                    mime="text/plain",
+                                    type="primary"
+                                )
+                            else:
+                                st.error("Could not parse query. Please be more specific about what analysis to perform.")
+                                if 'error' in result:
+                                    st.error(f"Could not parse query: {result['error']}")
                     
                     elif references_file and not has_uploaded:
+                        success = False  # Initialize for error handling below
                         st.warning("⚠️ Your query references a file, but no FASTA file has been uploaded. Please upload a file first using the section above.")
                     
                     else:
@@ -337,9 +635,13 @@ def main():
                         # Parse the query
                         success, result = nlp.parse_user_query(user_query)
                     
-                    if success:
+                    # Only process regular results if 'success' was defined (not using keyword detection)
+                    if 'success' in locals() and success:
+                        # Skip if already handled by keyword detection
+                        if isinstance(result, dict) and result.get('handled'):
+                            pass  # Already processed above
                         # Check if this is multiple unrelated questions
-                        if result.get('type') == 'multiple_questions':
+                        elif result.get('type') == 'multiple_questions':
                             # Handle multiple questions
                             st.markdown('<div class="tool-box">', unsafe_allow_html=True)
                             st.write(f"**Detected {result['total']} questions**")
@@ -552,9 +854,14 @@ def main():
                                     st.error(f"Error running tool: {str(e)}")
                                     st.markdown('</div>', unsafe_allow_html=True)
                     else:
-                        st.markdown('<div class="error-box">', unsafe_allow_html=True)
-                        st.error(f"Could not parse query: {result.get('error', 'Unknown error')}")
-                        st.markdown('</div>', unsafe_allow_html=True)
+                        # Only show error if result variable exists and parsing failed
+                        if 'result' in locals():
+                            st.markdown('<div class="error-box">', unsafe_allow_html=True)
+                            if isinstance(result, dict):
+                                st.error(f"Could not parse query: {result.get('error', 'Unknown error')}")
+                            else:
+                                st.error(f"Could not parse query: {result}")
+                            st.markdown('</div>', unsafe_allow_html=True)
                 
                 except Exception as e:
                     st.markdown('<div class="error-box">', unsafe_allow_html=True)
