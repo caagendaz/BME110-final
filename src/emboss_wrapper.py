@@ -911,14 +911,28 @@ Keep it conversational and friendly."""
                     return f"Error: Could not resolve gene {sequence}: {gene_info}"
             
             # Auto-detect protein sequences (contain amino acids not in DNA/RNA)
+            # Only convert if it's CLEARLY a protein sequence
+            upper_seq = sequence.upper()
+            dna_nucleotides = set('ATGCNU')  # DNA/RNA nucleotides
             protein_only_aa = set('EFILPQZ')  # These amino acids don't appear in DNA/RNA
-            if any(aa in sequence.upper() for aa in protein_only_aa):
+            
+            # Count nucleotides vs protein-only amino acids
+            nucleotide_count = sum(1 for c in upper_seq if c in dna_nucleotides)
+            protein_only_count = sum(1 for c in upper_seq if c in protein_only_aa)
+            nucleotide_ratio = nucleotide_count / len(sequence) if len(sequence) > 0 else 0
+            
+            # Only convert to protein BLAST if:
+            # 1. Contains protein-only amino acids AND
+            # 2. Less than 95% of sequence is DNA nucleotides
+            if protein_only_count > 0 and nucleotide_ratio < 0.95:
                 # Definitely a protein sequence
                 if blast_type == 'blastn':
                     blast_type = 'blastp'
                     if database == 'nt':
                         database = 'nr'
-                    print("Auto-detected protein sequence, using blastp")
+                    print(f"Auto-detected protein sequence (protein-only AAs: {protein_only_count}, nucleotide ratio: {nucleotide_ratio:.2%}), using blastp")
+            elif blast_type == 'blastn':
+                print(f"Using blastn for nucleotide sequence (nucleotide ratio: {nucleotide_ratio:.2%})")
             
             print(f"Submitting {blast_type} search to NCBI (this may take 10-30 seconds)...")
             print(f"Query sequence length: {len(sequence)} {'aa' if blast_type == 'blastp' else 'bp'}")
