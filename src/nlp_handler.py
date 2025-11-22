@@ -101,16 +101,26 @@ EMBOSS tools (use 'sequence' for raw DNA/protein sequences):
         if self.mode == 'cloud':
             base_prompt += """
 CLOUD-ONLY FEATURES:
-- blast: Search NCBI databases for similar sequences. Needs "sequence" and optional "blast_type", "database", "max_results"
-- blastn: DNA BLAST search. Needs "sequence"
-- blastp: Protein BLAST search. Needs "sequence"  
-- blastx: DNA to protein BLAST search. Needs "sequence"
+- blast: Search NCBI databases for similar sequences. Needs "sequence" and optional "blast_type", "database", "max_results", "exclude_taxa"
+- blastn: DNA BLAST search. Needs "sequence" and optional "exclude_taxa" (e.g., "primates" to exclude primates)
+- blastp: Protein BLAST search. Needs "sequence" and optional "exclude_taxa"
+- blastx: DNA to protein BLAST search. Needs "sequence" and optional "exclude_taxa"
 - blat: UCSC BLAT search. Needs "sequence" and optional "database"
 - genome_query: Query UCSC Genome Browser. Needs "genome", "chrom", "start", "end"
-- gene_query: Look up gene information. Needs "gene_name" and optional "genome" (default hg38)
+- gene_query: Look up gene information. Needs "gene_name" and optional "genome" (default hg38), optional "sequence_type" (mRNA, protein, or both)
 - gtex: Get tissue expression data. Needs "gene_name" and optional "top_n"
 - ucsc_gene: Get gene position from UCSC. Needs "gene_name"
 - bedtools: Find overlapping genomic regions. Needs "file_a" and "file_b"
+
+IMPORTANT BLAST FILTERING:
+- If user says "exclude primates", "non-primate", "excluding primates": add parameter "exclude_taxa": "primates"
+- If user says "mammals only" or "mammalian species": no filtering needed (BLAST already searches all organisms)
+
+MULTI-STEP WORKFLOWS (gene_query → BLAST):
+- If user asks to get gene info THEN BLAST the sequence:
+  Step 1: gene_query with gene_name and sequence_type (specify "mRNA" if user wants mRNA, "protein" if user wants protein)
+  Step 2: blastn (for mRNA) or blastp (for protein) with "sequence": "USE_PREVIOUS_RESULT"
+- The system will automatically fetch the correct sequence type from the gene
 
 GENE SYMBOL SUPPORT (cloud only):
 - If user mentions a GENE NAME/SYMBOL (like TP53, BRCA1, ALKBH1): use gene_name parameter with appropriate tool

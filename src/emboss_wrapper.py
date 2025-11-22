@@ -880,7 +880,7 @@ Keep it conversational and friendly."""
             return None
     
     def run_blast(self, sequence: str, blast_type: str = 'blastn', database: str = 'nt', 
-                  max_results: int = 10, expect_threshold: float = 10.0) -> str:
+                  max_results: int = 10, expect_threshold: float = 10.0, exclude_taxa: str = None) -> str:
         """Run BLAST search against NCBI databases using remote Entrez service
         
         Args:
@@ -937,11 +937,39 @@ Keep it conversational and friendly."""
             print(f"Submitting {blast_type} search to NCBI (this may take 10-30 seconds)...")
             print(f"Query sequence length: {len(sequence)} {'aa' if blast_type == 'blastp' else 'bp'}")
             
+            # Normalize database names for NCBI
+            db_mapping = {
+                'nucleotide': 'nt',
+                'nucleotides': 'nt',
+                'protein': 'nr',
+                'proteins': 'nr',
+                'core_nt': 'nt',
+                'core_nr': 'nr'
+            }
+            database = db_mapping.get(database.lower(), database)
+            
+            # Build Entrez query for taxonomic filtering
+            entrez_query = None
+            if exclude_taxa and 'primate' in exclude_taxa.lower():
+                # Use NCBI taxonomy to exclude all primates (taxid:9443)
+                # Search in Mammalia (taxid:40674) but NOT in Primates (taxid:9443)
+                entrez_query = "txid40674[Organism:exp] NOT txid9443[Organism:exp]"
+                print(f"Filtering: Mammals excluding primates (using NCBI taxonomy)")
+                # Request more results to ensure we get good hits after filtering
+                actual_hitlist_size = max(max_results * 3, 50)
+            else:
+                actual_hitlist_size = max_results
+            
             # Submit BLAST query using NCBIWWW (web interface)
-            result_handle = NCBIWWW.qblast(blast_type, database, sequence, 
-                                          hitlist_size=max_results, 
-                                          expect=expect_threshold,
-                                          format_type="XML")
+            result_handle = NCBIWWW.qblast(
+                blast_type, 
+                database, 
+                sequence,
+                hitlist_size=actual_hitlist_size,
+                expect=expect_threshold,
+                format_type="XML",
+                entrez_query=entrez_query
+            )
             
             # Parse results
             blast_records = list(NCBIXML.parse(result_handle))
@@ -957,14 +985,40 @@ Keep it conversational and friendly."""
             record = blast_records[0]
             output.append(f"\nQuery: {record.query[:50]}...")
             output.append(f"Query Length: {record.query_length} bp")
-            output.append(f"Number of Alignments: {len(record.alignments)}")
-            output.append("-" * 60)
             
             if len(record.alignments) == 0:
+                output.append(f"Number of Alignments: 0")
+                output.append("-" * 60)
                 output.append("No matches found")
             else:
-                # Show only top N results
-                for alignment_idx, alignment in enumerate(record.alignments[:max_results], 1):
+                # Note: If entrez_query was used, NCBI already filtered the results
+                if entrez_query:
+                    output.append(f"Number of Alignments: {len(record.alignments)} (pre-filtered by NCBI taxonomy)")
+                    output.append(f"Showing top {min(max_results, len(record.alignments))} results")
+                else:
+                    output.append(f"Number of Alignments: {len(record.alignments)}")
+                output.append("-" * 60)
+                
+                # Show results (already filtered by NCBI if entrez_query was used)
+                alignments_to_show = record.alignments[:max_results]
+                
+                # Debug: Print all organism names to console
+                if entrez_query and len(record.alignments) > 0:
+                    print(f"Top {min(10, len(record.alignments))} organisms found:")
+                    for i, aln in enumerate(record.alignments[:10], 1):
+                        # Extract organism name from title
+                        title_parts = aln.title.split('|')
+                        if len(title_parts) > 4:
+                            organism_part = title_parts[4].strip()
+                        else:
+                            organism_part = aln.title
+                        hsp = aln.hsps[0] if aln.hsps else None
+                        if hsp:
+                            identity_pct = 100 * hsp.identities / hsp.align_length if hsp.align_length > 0 else 0
+                            print(f"  {i}. {organism_part[:80]} ({identity_pct:.1f}% identity)")
+                
+                # Show filtered results
+                for alignment_idx, alignment in enumerate(alignments_to_show, 1):
                     output.append(f"\nHit {alignment_idx}: {alignment.title}")
                     output.append(f"  Accession: {alignment.accession}")
                     output.append(f"  Length: {alignment.length} bp")
@@ -1136,7 +1190,8 @@ Keep it conversational and friendly."""
                 blast_type=blast_type,
                 database=kwargs.get('database', 'nt'),
                 max_results=int(kwargs.get('max_results', 10)),
-                expect_threshold=float(kwargs.get('expect_threshold', 10.0))
+                expect_threshold=float(kwargs.get('expect_threshold', 10.0)),
+                exclude_taxa=kwargs.get('exclude_taxa', None)
             )
         elif emboss_name == 'bedtools_intersect':
             # BEDTools intersect for genomic overlap analysis
@@ -1267,50 +1322,61 @@ Keep it conversational and friendly."""
         cached_sequence = None
         previous_tool = None
         previous_gene_name = None  # Track gene name from gene_query
+        previous_sequence_type = 'cdna'  # Default sequence type
         
         try:
             for idx, step in enumerate(steps):
                 tool_name = step.get('tool')
                 parameters = step.get('parameters', {}).copy()
                 
-                # Track gene name from gene_query step
+                # Track gene name and sequence type from gene_query step
                 if tool_name == 'gene_query':
                     previous_gene_name = parameters.get('gene_name') or parameters.get('gene')
+                    # Store the sequence type requested (mRNA, protein, etc.)
+                    seq_type_param = parameters.get('sequence_type', 'mRNA').lower()
+                    if seq_type_param in ['mrna', 'transcript', 'cdna']:
+                        previous_sequence_type = 'cdna'
+                    elif seq_type_param in ['protein', 'peptide']:
+                        previous_sequence_type = 'protein'
+                    else:
+                        # Default: if user asks for both mRNA and protein, prioritize mRNA for BLAST
+                        previous_sequence_type = 'cdna'
+                    print(f"[Step {idx+1}/{len(steps)}] Tracked gene_name={previous_gene_name}, sequence_type={previous_sequence_type}")
                 
                 # Smart chaining: if previous step was gene_query and this step is BLAST/analysis tool
                 if previous_tool == 'gene_query' and tool_name in ['blast', 'blastn', 'blastp', 'blastx', 'search']:
-                    # If sequence was removed during cleanup (gene name detection), fetch the actual sequence
-                    if 'sequence' not in parameters and previous_gene_name:
-                        print(f"[Step {idx+1}/{len(steps)}] Fetching sequence for {previous_gene_name}...")
+                    seq_type = previous_sequence_type  # Use the sequence type from gene_query
+                    
+                    # Check if sequence parameter indicates it should come from previous step
+                    sequence_param = parameters.get('sequence', '')
+                    needs_fetch = False
+                    
+                    if not sequence_param or 'sequence' not in parameters:
+                        needs_fetch = True
+                    elif isinstance(sequence_param, str):
+                        # Check for various ways Gemini might say "use previous result"
+                        lower_seq = sequence_param.lower()
+                        if any(phrase in lower_seq for phrase in [
+                            'use_previous_result', 'previous step', 'from previous', 
+                            'use previous', 'from step', 'retrieved', 'from gene_query'
+                        ]):
+                            needs_fetch = True
+                    
+                    if needs_fetch and previous_gene_name:
+                        print(f"[Step {idx+1}/{len(steps)}] Fetching {seq_type} sequence for {previous_gene_name}...")
                         # Use _resolve_sequence_from_gene which handles gene name -> transcript -> sequence
-                        sequence = self._resolve_sequence_from_gene(previous_gene_name, seq_type='cdna')
+                        sequence = self._resolve_sequence_from_gene(previous_gene_name, seq_type=seq_type)
                         if sequence:
                             # Clean up the sequence (remove formatting)
                             sequence = ''.join(c for c in sequence if c.isalpha())
                             parameters['sequence'] = sequence
-                            print(f"[Step {idx+1}/{len(steps)}] Using sequence ({len(sequence)} bp) for BLAST")
+                            print(f"[Step {idx+1}/{len(steps)}] Using {seq_type} sequence ({len(sequence)} {'aa' if seq_type == 'protein' else 'bp'}) for BLAST")
                         else:
                             return False, [{
                                 'step': idx + 1,
-                                'error': f"Could not fetch sequence for {previous_gene_name}",
+                                'error': f"Could not fetch {seq_type} sequence for {previous_gene_name}",
                                 'details': "Failed to resolve gene name to transcript sequence"
                             }]
-                    # Also check if gene_name is in current parameters (fallback)
-                    elif 'sequence' not in parameters:
-                        gene_name = parameters.get('gene_name')
-                        if gene_name:
-                            print(f"[Step {idx+1}/{len(steps)}] Fetching sequence for {gene_name}...")
-                            sequence = self._resolve_sequence_from_gene(gene_name, seq_type='cdna')
-                            if sequence:
-                                sequence = ''.join(c for c in sequence if c.isalpha())
-                                parameters['sequence'] = sequence
-                                print(f"[Step {idx+1}/{len(steps)}] Using sequence ({len(sequence)} bp) for BLAST")
-                            else:
-                                return False, [{
-                                    'step': idx + 1,
-                                    'error': f"Could not fetch sequence for {gene_name}",
-                                    'details': "Failed to resolve gene name to transcript sequence"
-                                }]
                 
                 # If using previous result, inject it into current step
                 if use_previous_result and cached_result and idx > 0:
