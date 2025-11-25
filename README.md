@@ -340,7 +340,7 @@ Feel free to:
 
 ## License
 
-This is an educational project for BME110 at UCSC.
+MIT License
 
 ## References
 
