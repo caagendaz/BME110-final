@@ -10,6 +10,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from Bio import Entrez
 import requests
+import json
+from datetime import datetime
 
 
 class EMBOSSWrapper:
@@ -19,6 +21,9 @@ class EMBOSSWrapper:
         """Initialize the EMBOSS wrapper and verify installation"""
         # Set NCBI Entrez email for downloads
         Entrez.email = "user@bioquery.local"
+        
+        # Initialize command log
+        self.command_log = []
         
         # Map natural language to EMBOSS commands (shortcuts for common operations)
         self.tool_map = {
@@ -62,7 +67,15 @@ class EMBOSSWrapper:
             'ucsc_gene': 'ucsc_gene_info',
             'gtex': 'gtex_expression',
             'expression': 'gtex_expression',
-            'tissue_expression': 'gtex_expression'
+            'tissue_expression': 'gtex_expression',
+            'ucsc_table': 'ucsc_table_query',
+            'table_browser': 'ucsc_table_query',
+            'pubmed': 'pubmed_search',
+            'literature': 'pubmed_search',
+            'articles': 'pubmed_search',
+            'overlap': 'track_intersection',
+            'intersect_tracks': 'track_intersection',
+            'track_overlap': 'track_intersection'
         }
         
         # Tool descriptions for user guidance
@@ -125,6 +138,77 @@ class EMBOSSWrapper:
         except subprocess.TimeoutExpired:
             print("✗ EMBOSS check timed out")
             return False
+    
+    def _log_command(self, tool: str, parameters: dict, result: str, error: Optional[str] = None):
+        """Log a command execution for debugging
+        
+        Args:
+            tool: Tool name that was executed
+            parameters: Parameters passed to the tool
+            result: Result summary or first 500 chars
+            error: Error message if command failed
+        """
+        # Truncate long sequences in parameters for readability
+        logged_params = {}
+        for key, value in parameters.items():
+            if isinstance(value, str) and len(value) > 100:
+                logged_params[key] = f"{value[:100]}... ({len(value)} chars total)"
+            else:
+                logged_params[key] = value
+        
+        # Truncate result
+        logged_result = result[:500] + "..." if len(result) > 500 else result
+        
+        log_entry = {
+            "timestamp": datetime.now().isoformat(),
+            "tool": tool,
+            "parameters": logged_params,
+            "result_preview": logged_result,
+            "success": error is None,
+            "error": error
+        }
+        
+        self.command_log.append(log_entry)
+    
+    def get_command_log(self) -> List[Dict]:
+        """Get the full command log
+        
+        Returns:
+            List of command log entries
+        """
+        return self.command_log
+    
+    def get_formatted_log(self) -> str:
+        """Get formatted command log as a readable string
+        
+        Returns:
+            Formatted log string
+        """
+        if not self.command_log:
+            return "No commands executed yet."
+        
+        log_lines = ["=" * 80, "COMMAND EXECUTION LOG", "=" * 80, ""]
+        
+        for i, entry in enumerate(self.command_log, 1):
+            log_lines.append(f"Command #{i} - {entry['timestamp']}")
+            log_lines.append(f"Tool: {entry['tool']}")
+            log_lines.append(f"Status: {'✓ SUCCESS' if entry['success'] else '✗ FAILED'}")
+            log_lines.append("Parameters:")
+            for key, value in entry['parameters'].items():
+                log_lines.append(f"  - {key}: {value}")
+            if entry['error']:
+                log_lines.append(f"Error: {entry['error']}")
+            else:
+                log_lines.append(f"Result Preview: {entry['result_preview']}")
+            log_lines.append("")
+            log_lines.append("-" * 80)
+            log_lines.append("")
+        
+        return "\n".join(log_lines)
+    
+    def clear_log(self):
+        """Clear the command log"""
+        self.command_log = []
     
     def discover_all_emboss_tools(self) -> List[str]:
         """Discover all available EMBOSS tools by checking which have the EMBOSS help signature
@@ -880,15 +964,19 @@ Keep it conversational and friendly."""
             return None
     
     def run_blast(self, sequence: str, blast_type: str = 'blastn', database: str = 'nt', 
-                  max_results: int = 10, expect_threshold: float = 10.0, exclude_taxa: str = None) -> str:
+                  max_results: int = 10, expect_threshold: float = 10.0, exclude_taxa: str = None,
+                  word_size: int = None, organism: str = None) -> str:
         """Run BLAST search against NCBI databases using remote Entrez service
         
         Args:
             sequence: Query sequence (DNA, RNA, or protein) or gene name to resolve
-            blast_type: 'blastn' (DNA), 'blastp' (protein), 'blastx' (DNA->protein)
+            blast_type: 'blastn' (DNA), 'blastp' (protein), 'blastx' (DNA->protein), 'tblastn' (protein->DNA)
             database: NCBI database ('nt' for nucleotide, 'nr' for protein, etc.)
             max_results: Maximum number of results to return
             expect_threshold: E-value threshold for reporting
+            exclude_taxa: Taxa to exclude (e.g., 'primates')
+            word_size: Word size for BLAST (default varies by program)
+            organism: Limit search to specific organism or taxonomic group (e.g., 'Archaea', 'Bacteria')
         
         Returns:
             str: Formatted BLAST results with hits, E-values, and identity percentages
@@ -950,26 +1038,56 @@ Keep it conversational and friendly."""
             
             # Build Entrez query for taxonomic filtering
             entrez_query = None
+            
+            # Handle organism parameter (Archaea, Bacteria, specific taxa)
+            if organism:
+                organism_lower = organism.lower()
+                if organism_lower == 'archaea':
+                    entrez_query = "txid2157[Organism:exp]"  # Archaea domain
+                    print(f"Filtering: Archaea domain only")
+                elif organism_lower == 'bacteria':
+                    entrez_query = "txid2[Organism:exp]"  # Bacteria domain
+                    print(f"Filtering: Bacteria domain only")
+                else:
+                    # Custom organism filter
+                    entrez_query = f"{organism}[Organism]"
+                    print(f"Filtering: {organism}")
+            
+            # Handle exclude_taxa (can combine with organism filter)
             if exclude_taxa and 'primate' in exclude_taxa.lower():
                 # Use NCBI taxonomy to exclude all primates (taxid:9443)
                 # Search in Mammalia (taxid:40674) but NOT in Primates (taxid:9443)
-                entrez_query = "txid40674[Organism:exp] NOT txid9443[Organism:exp]"
+                if entrez_query:
+                    entrez_query += " NOT txid9443[Organism:exp]"
+                else:
+                    entrez_query = "txid40674[Organism:exp] NOT txid9443[Organism:exp]"
                 print(f"Filtering: Mammals excluding primates (using NCBI taxonomy)")
-                # Request more results to ensure we get good hits after filtering
-                actual_hitlist_size = max(max_results * 3, 50)
+            
+            # Request more results when filtering to ensure good hits
+            if entrez_query:
+                actual_hitlist_size = max(max_results * 10, 200)
             else:
                 actual_hitlist_size = max_results
             
+            # Build BLAST parameters
+            blast_params = {
+                'program': blast_type,
+                'database': database,
+                'sequence': sequence,
+                'hitlist_size': actual_hitlist_size,
+                'expect': expect_threshold,
+                'format_type': 'XML'
+            }
+            
+            # Add optional parameters
+            if entrez_query:
+                blast_params['entrez_query'] = entrez_query
+            if word_size:
+                blast_params['word_size'] = word_size
+                print(f"Using word size: {word_size}")
+            
             # Submit BLAST query using NCBIWWW (web interface)
-            result_handle = NCBIWWW.qblast(
-                blast_type, 
-                database, 
-                sequence,
-                hitlist_size=actual_hitlist_size,
-                expect=expect_threshold,
-                format_type="XML",
-                entrez_query=entrez_query
-            )
+            result_handle = NCBIWWW.qblast(**blast_params)
             
             # Parse results
             blast_records = list(NCBIXML.parse(result_handle))
@@ -999,13 +1117,37 @@ Keep it conversational and friendly."""
                     output.append(f"Number of Alignments: {len(record.alignments)}")
                 output.append("-" * 60)
                 
-                # Show results (already filtered by NCBI if entrez_query was used)
-                alignments_to_show = record.alignments[:max_results]
-                
-                # Debug: Print all organism names to console
+                # Sort by identity percentage if we have taxonomy filtering
+                # (helps show the most similar species first)
+                # IMPORTANT: Sort BEFORE taking top N results, not after!
                 if entrez_query and len(record.alignments) > 0:
-                    print(f"Top {min(10, len(record.alignments))} organisms found:")
-                    for i, aln in enumerate(record.alignments[:10], 1):
+                    def get_identity_pct(alignment):
+                        if alignment.hsps:
+                            hsp = alignment.hsps[0]
+                            return (100 * hsp.identities / hsp.align_length) if hsp.align_length > 0 else 0
+                        return 0
+                    
+                    # Sort ALL alignments by identity first
+                    all_alignments_sorted = sorted(record.alignments, key=get_identity_pct, reverse=True)
+                    alignments_to_show = all_alignments_sorted[:max_results]
+                    output.append("Results sorted by identity percentage (highest first)")
+                    output.append("")
+                else:
+                    # No taxonomy filtering - use NCBI's default E-value sorting
+                    alignments_to_show = record.alignments[:max_results]
+                
+                # Debug: Print organisms sorted by identity to console
+                if entrez_query and len(record.alignments) > 0:
+                    print(f"\nDEBUG: Received {len(record.alignments)} total results from NCBI")
+                    # Sort by identity for debug display
+                    def get_identity_pct_debug(aln):
+                        if aln.hsps:
+                            hsp = aln.hsps[0]
+                            return (100 * hsp.identities / hsp.align_length) if hsp.align_length > 0 else 0
+                        return 0
+                    sorted_alns = sorted(record.alignments, key=get_identity_pct_debug, reverse=True)
+                    print(f"Top {min(10, len(sorted_alns))} organisms by identity:")
+                    for i, aln in enumerate(sorted_alns[:10], 1):
                         # Extract organism name from title
                         title_parts = aln.title.split('|')
                         if len(title_parts) > 4:
@@ -1016,6 +1158,15 @@ Keep it conversational and friendly."""
                         if hsp:
                             identity_pct = 100 * hsp.identities / hsp.align_length if hsp.align_length > 0 else 0
                             print(f"  {i}. {organism_part[:80]} ({identity_pct:.1f}% identity)")
+                    
+                    # Check all Cynocephalus volans hits
+                    print(f"\nAll Cynocephalus volans hits:")
+                    for i, aln in enumerate(record.alignments, 1):
+                        if 'Cynocephalus volans' in aln.title:
+                            hsp = aln.hsps[0] if aln.hsps else None
+                            if hsp:
+                                identity_pct = 100 * hsp.identities / hsp.align_length if hsp.align_length > 0 else 0
+                                print(f"  {aln.accession}: {identity_pct:.2f}% identity, E-value: {hsp.expect:.2e}")
                 
                 # Show filtered results
                 for alignment_idx, alignment in enumerate(alignments_to_show, 1):
@@ -1053,6 +1204,26 @@ Keep it conversational and friendly."""
         Args:
             tool_name: Name of the tool to run (natural language or EMBOSS name)
             **kwargs: Tool-specific parameters (can include 'gene_name', 'sequence', 'transcript_variant')
+        
+        Returns:
+            str: Tool output or error message
+        """
+        # Log the command execution
+        try:
+            result = self._run_tool_internal(tool_name, **kwargs)
+            self._log_command(tool_name, kwargs, result)
+            return result
+        except Exception as e:
+            error_msg = f"Error: {str(e)}"
+            self._log_command(tool_name, kwargs, "", error=error_msg)
+            return error_msg
+    
+    def _run_tool_internal(self, tool_name: str, **kwargs) -> str:
+        """Internal implementation of run_tool (without logging wrapper)
+        
+        Args:
+            tool_name: Name of the tool to run
+            **kwargs: Tool-specific parameters
         
         Returns:
             str: Tool output or error message
@@ -1191,7 +1362,9 @@ Keep it conversational and friendly."""
                 database=kwargs.get('database', 'nt'),
                 max_results=int(kwargs.get('max_results', 10)),
                 expect_threshold=float(kwargs.get('expect_threshold', 10.0)),
-                exclude_taxa=kwargs.get('exclude_taxa', None)
+                exclude_taxa=kwargs.get('exclude_taxa', None),
+                word_size=kwargs.get('word_size', None),
+                organism=kwargs.get('organism', None)
             )
         elif emboss_name == 'bedtools_intersect':
             # BEDTools intersect for genomic overlap analysis
@@ -1239,6 +1412,34 @@ Keep it conversational and friendly."""
                 return result.get('output', '')
             else:
                 return f"GTEx error: {result.get('error', 'Unknown error')}"
+        elif emboss_name == 'ucsc_table_query':
+            # UCSC Table Browser query
+            return self.ucsc_table_query(
+                genome=kwargs.get('genome', 'hg38'),
+                track=kwargs.get('track', ''),
+                table=kwargs.get('table', None),
+                chrom=kwargs.get('chrom', None),
+                start=kwargs.get('start', None),
+                end=kwargs.get('end', None),
+                filter_field=kwargs.get('filter_field', None),
+                filter_value=kwargs.get('filter_value', None)
+            )
+        elif emboss_name == 'pubmed_search':
+            # PubMed literature search
+            return self.pubmed_search(
+                query=kwargs.get('query', ''),
+                max_results=int(kwargs.get('max_results', 10)),
+                year=kwargs.get('year', None)
+            )
+        elif emboss_name == 'track_intersection':
+            # Track intersection/overlap analysis
+            return self.track_intersection(
+                genome=kwargs.get('genome', 'hg38'),
+                track1=kwargs.get('track1', ''),
+                track2=kwargs.get('track2', ''),
+                chrom=kwargs.get('chrom', None),
+                max_results=int(kwargs.get('max_results', 10))
+            )
         else:
             # Generic EMBOSS tool fallback
             return self._run_generic_emboss_tool(emboss_name, **kwargs)
@@ -1467,8 +1668,8 @@ Keep it conversational and friendly."""
                     output += ", ".join(param_strs) + "\n"
                 
                 result_text = result.get('output', '')
-                if isinstance(result_text, str) and len(result_text) > 500:
-                    output += f"Output:\n{result_text[:500]}...\n\n"
+                if isinstance(result_text, str) and len(result_text) > 50000:
+                    output += f"Output:\n{result_text[:50000]}...\n(Output truncated at 50000 characters)\n\n"
                 else:
                     output += f"Output:\n{result_text}\n\n"
             else:
@@ -1730,6 +1931,472 @@ Keep it conversational and friendly."""
                 'success': False,
                 'error': f"GTEx query failed: {str(e)}"
             }
+
+    def ucsc_table_query(self, genome: str, track: str, table: str = None, 
+                        chrom: str = None, start: int = None, end: int = None,
+                        filter_field: str = None, filter_value: str = None) -> str:
+        """Query UCSC Table Browser using REST API
+        
+        Args:
+            genome: Genome assembly (e.g., 'hg38', 'mm10')
+            track: Track name (e.g., 'tRNAs', 'cons100way')
+            table: Table name (optional, not used with REST API)
+            chrom: Chromosome (e.g., 'chr16', 'chr6')
+            start: Start position (0-based)
+            end: End position (1-based)
+            filter_field: Field name to filter on (e.g., 'score')
+            filter_value: Filter value (e.g., '>=65')
+        
+        Returns:
+            str: Query results or count of features
+        """
+        try:
+            import requests
+            
+            # Map common track names to UCSC REST API track names
+            # Based on UCSC documentation for supported track types
+            track_map = {
+                'trna': 'tRNAs',
+                'trnas': 'tRNAs',
+                'trnascan': 'tRNAs',
+                'trnascan-se': 'tRNAs',
+                'trnascan se': 'tRNAs',
+                'trna genes': 'tRNAs',
+                'trna_genes': 'tRNAs'
+            }
+            
+            # Normalize track name
+            track_normalized = track_map.get(track.lower(), track)
+            
+            # Special handling for score field filters - map to actual field names
+            filter_field_map = {
+                'score': 'trnaScore',  # The tRNAs track uses 'trnaScore' field
+                'trnascore': 'trnaScore'
+            }
+            
+            if filter_field:
+                filter_field = filter_field_map.get(filter_field.lower(), filter_field)
+            
+            # Use UCSC REST API endpoint
+            api_url = "https://api.genome.ucsc.edu/getData/track"
+            
+            # Build parameters according to REST API documentation
+            params = {
+                'genome': genome,
+                'track': track_normalized,
+                'maxItemsOutput': '1000000'  # Get all results
+            }
+            
+            # Add chromosome and coordinates if specified
+            if chrom:
+                params['chrom'] = chrom
+            if start is not None and end is not None:
+                params['start'] = str(start)
+                params['end'] = str(end)
+            
+            print(f"Querying UCSC REST API: {genome}, track={track_normalized}")
+            if chrom:
+                if start is not None:
+                    print(f"  Region: {chrom}:{start}-{end}")
+                else:
+                    print(f"  Chromosome: {chrom}")
+            
+            response = requests.get(api_url, params=params, timeout=60)
+            
+            if response.status_code != 200:
+                return f"Error: UCSC API returned status {response.status_code}\nTried track: {track_normalized}\nURL: {response.url}\nResponse: {response.text[:500]}"
+            
+            # Parse JSON response
+            try:
+                data = response.json()
+            except:
+                return f"Error: Could not parse JSON response from UCSC API\nResponse: {response.text[:500]}"
+            
+            # Check for errors in response
+            if isinstance(data, dict) and 'error' in data:
+                return f"Error from UCSC: {data['error']}"
+            
+            # Extract features from the response
+            # The API returns data in different formats depending on track type
+            features = []
+            if isinstance(data, dict):
+                # For tRNAs track, the data is under the track name key
+                if track_normalized in data and isinstance(data[track_normalized], list):
+                    features = data[track_normalized]
+                # Look for other common keys that contain the actual data
+                elif 'data' in data and isinstance(data['data'], list):
+                    features = data['data']
+                elif chrom in data and isinstance(data[chrom], list):
+                    features = data[chrom]
+                else:
+                    # Some responses have the data directly as a single item
+                    if 'chrom' in data or 'chromStart' in data:
+                        features = [data]
+            elif isinstance(data, list):
+                features = data
+            
+            # Apply filters if specified
+            if filter_field and filter_value and len(features) > 0:
+                filtered = []
+                for feature in features:
+                    if isinstance(feature, dict):
+                        field_val = feature.get(filter_field)
+                        if field_val is not None:
+                            try:
+                                # Parse filter (e.g., '>=65')
+                                if filter_value.startswith('>='):
+                                    threshold = float(filter_value[2:])
+                                    if float(field_val) >= threshold:
+                                        filtered.append(feature)
+                                elif filter_value.startswith('<='):
+                                    threshold = float(filter_value[2:])
+                                    if float(field_val) <= threshold:
+                                        filtered.append(feature)
+                                elif filter_value.startswith('='):
+                                    if str(field_val) == filter_value[1:]:
+                                        filtered.append(feature)
+                            except (ValueError, TypeError):
+                                continue
+                
+                features = filtered
+                print(f"  After filtering {filter_field}{filter_value}: {len(features)} features")
+            
+            # Format output
+            output = []
+            output.append(f"UCSC REST API Query: {genome}")
+            output.append(f"Track: {track_normalized}")
+            if chrom:
+                if start is not None:
+                    region_str = f"{chrom}:{start}-{end}"
+                else:
+                    region_str = chrom
+                output.append(f"Region: {region_str}")
+            output.append(f"Total features found: {len(features)}")
+            output.append("=" * 60)
+            
+            # Show first few features
+            if len(features) > 0 and isinstance(features[0], dict):
+                first_feat = features[0]
+                name = first_feat.get('name', first_feat.get('id', 'unnamed'))
+                output.append(f"\nFirst feature: {name}")
+                
+                if len(features) > 5:
+                    output.append(f"\nShowing first 5 of {len(features)} features:")
+                    for i, feat in enumerate(features[:5], 1):
+                        name = feat.get('name', feat.get('id', 'unnamed'))
+                        chrom_val = feat.get('chrom', '?')
+                        start_pos = feat.get('chromStart', feat.get('start', '?'))
+                        end_pos = feat.get('chromEnd', feat.get('end', '?'))
+                        output.append(f"  {i}. {name} ({chrom_val}:{start_pos}-{end_pos})")
+            
+            return "\n".join(output)
+            
+        except Exception as e:
+            import traceback
+            return f"UCSC Table Browser query failed: {str(e)}\n{traceback.format_exc()}"
+
+    def pubmed_search(self, query: str, max_results: int = 10, year: int = None) -> str:
+        """Search PubMed using NCBI E-utilities
+        
+        Args:
+            query: Search query (e.g., 'gas5[Title]', 'CRISPR cancer')
+            max_results: Maximum number of results to return
+            year: Limit to specific publication year
+        
+        Returns:
+            str: Formatted search results with PMIDs, titles, and abstracts
+        """
+        try:
+            import requests
+            from xml.etree import ElementTree as ET
+            
+            # Build search query
+            search_query = query
+            if year:
+                search_query += f" AND {year}[pdat]"
+            
+            print(f"Searching PubMed: {search_query}")
+            
+            # Step 1: Search for PMIDs
+            esearch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
+            search_params = {
+                'db': 'pubmed',
+                'term': search_query,
+                'retmax': max_results,
+                'retmode': 'json'
+            }
+            
+            search_response = requests.get(esearch_url, params=search_params, timeout=30)
+            if search_response.status_code != 200:
+                return f"Error: PubMed search failed with status {search_response.status_code}"
+            
+            search_data = search_response.json()
+            pmids = search_data.get('esearchresult', {}).get('idlist', [])
+            
+            if not pmids:
+                return f"No PubMed articles found for: {search_query}"
+            
+            print(f"Found {len(pmids)} articles")
+            
+            # Step 2: Fetch article details
+            efetch_url = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
+            fetch_params = {
+                'db': 'pubmed',
+                'id': ','.join(pmids),
+                'retmode': 'xml'
+            }
+            
+            fetch_response = requests.get(efetch_url, params=fetch_params, timeout=30)
+            if fetch_response.status_code != 200:
+                return f"Error: Could not fetch article details"
+            
+            # Parse XML
+            root = ET.fromstring(fetch_response.content)
+            
+            # Format output
+            output = []
+            output.append(f"PubMed Search Results: {search_query}")
+            output.append(f"Found {len(pmids)} articles")
+            output.append("=" * 60)
+            
+            for i, article in enumerate(root.findall('.//PubmedArticle'), 1):
+                pmid_elem = article.find('.//PMID')
+                pmid = pmid_elem.text if pmid_elem is not None else 'Unknown'
+                
+                title_elem = article.find('.//ArticleTitle')
+                title = title_elem.text if title_elem is not None else 'No title'
+                
+                # Get authors
+                authors = []
+                for author in article.findall('.//Author')[:3]:  # First 3 authors
+                    lastname = author.find('LastName')
+                    if lastname is not None:
+                        authors.append(lastname.text)
+                author_str = ', '.join(authors)
+                if len(article.findall('.//Author')) > 3:
+                    author_str += ', et al.'
+                
+                # Get year
+                year_elem = article.find('.//PubDate/Year')
+                pub_year = year_elem.text if year_elem is not None else 'Unknown'
+                
+                # Get abstract
+                abstract_elem = article.find('.//AbstractText')
+                abstract = abstract_elem.text if abstract_elem is not None else 'No abstract available'
+                if abstract and len(abstract) > 500:
+                    abstract = abstract[:500] + '...'
+                
+                output.append(f"\n{i}. PMID: {pmid}")
+                output.append(f"   Title: {title}")
+                output.append(f"   Authors: {author_str}")
+                output.append(f"   Year: {pub_year}")
+                output.append(f"   Abstract: {abstract}")
+                output.append("")
+            
+            return "\n".join(output)
+            
+        except Exception as e:
+            import traceback
+            return f"PubMed search failed: {str(e)}\n{traceback.format_exc()}"
+
+    def track_intersection(self, genome: str, track1: str, track2: str, 
+                          chrom: str = None, max_results: int = 10) -> str:
+        """Find genomic features that overlap between two tracks
+        
+        Args:
+            genome: Genome assembly (e.g., 'hg38')
+            track1: First track name (e.g., 'tRNAs')
+            track2: Second track name to intersect with (e.g., 'knownGene')
+            chrom: Optional chromosome to limit search
+            max_results: Maximum number of overlapping features to show
+        
+        Returns:
+            str: List of overlapping features with details
+        """
+        try:
+            import requests
+            
+            # Map common track names
+            track_map = {
+                'trna': 'tRNAs',
+                'trnas': 'tRNAs',
+                'trnascan': 'tRNAs',
+                'gencode': 'knownGene',
+                'gencode v48': 'knownGene',
+                'all gencode v48': 'knownGene',
+                'genes': 'knownGene'
+            }
+            
+            track1_norm = track_map.get(track1.lower(), track1)
+            track2_norm = track_map.get(track2.lower(), track2)
+            
+            api_url = "https://api.genome.ucsc.edu/getData/track"
+            
+            print(f"Finding overlaps between {track1_norm} and {track2_norm} in {genome}")
+            
+            # Get data from both tracks
+            # Limit to specific chromosome if provided, otherwise get all
+            params1 = {
+                'genome': genome,
+                'track': track1_norm,
+                'maxItemsOutput': '1000000'
+            }
+            if chrom:
+                params1['chrom'] = chrom
+            
+            print(f"Fetching {track1_norm} data...")
+            response1 = requests.get(api_url, params=params1, timeout=120)
+            if response1.status_code != 200:
+                return f"Error fetching {track1_norm}: Status {response1.status_code}\nURL: {response1.url}"
+            
+            data1 = response1.json()
+            features1 = []
+            if isinstance(data1, dict) and track1_norm in data1:
+                track_data = data1[track1_norm]
+                # Handle both list and dict-of-lists formats
+                if isinstance(track_data, list):
+                    features1 = track_data
+                elif isinstance(track_data, dict):
+                    # Dict with chromosome keys, flatten all lists
+                    for chrom_key, chrom_features in track_data.items():
+                        if isinstance(chrom_features, list):
+                            features1.extend(chrom_features)
+            
+            if not features1:
+                return f"No features found in {track1_norm}"
+            
+            print(f"Found {len(features1)} features in {track1_norm}")
+            
+            # Get track2 data
+            params2 = {
+                'genome': genome,
+                'track': track2_norm,
+                'maxItemsOutput': '1000000'
+            }
+            if chrom:
+                params2['chrom'] = chrom
+            
+            print(f"Fetching {track2_norm} data...")
+            response2 = requests.get(api_url, params=params2, timeout=120)
+            if response2.status_code != 200:
+                return f"Error fetching {track2_norm}: Status {response2.status_code}"
+            
+            data2 = response2.json()
+            features2 = []
+            if isinstance(data2, dict) and track2_norm in data2:
+                track_data = data2[track2_norm]
+                # Handle both list and dict-of-lists formats
+                if isinstance(track_data, list):
+                    features2 = track_data
+                elif isinstance(track_data, dict):
+                    # Dict with chromosome keys, flatten all lists
+                    for chrom_key, chrom_features in track_data.items():
+                        if isinstance(chrom_features, list):
+                            features2.extend(chrom_features)
+            
+            if not features2:
+                return f"No features found in {track2_norm}"
+            
+            print(f"Found {len(features2)} features in {track2_norm}")
+            
+            # Find overlaps
+            print("Computing intersections...")
+            overlaps = []
+            
+            for feat1 in features1:
+                # Skip if not a dictionary
+                if not isinstance(feat1, dict):
+                    continue
+                    
+                chrom1 = feat1.get('chrom')
+                start1 = feat1.get('chromStart', feat1.get('start'))
+                end1 = feat1.get('chromEnd', feat1.get('end'))
+                name1 = feat1.get('name', 'unnamed')
+                
+                if start1 is None or end1 is None:
+                    continue
+                
+                # Check for overlaps with track2 features
+                for feat2 in features2:
+                    # Skip if not a dictionary
+                    if not isinstance(feat2, dict):
+                        continue
+                        
+                    chrom2 = feat2.get('chrom')
+                    start2 = feat2.get('chromStart', feat2.get('start'))
+                    end2 = feat2.get('chromEnd', feat2.get('end'))
+                    
+                    if start2 is None or end2 is None or chrom1 != chrom2:
+                        continue
+                    
+                    # Check for overlap: features overlap if they share any base
+                    if start1 < end2 and start2 < end1:
+                        name2 = feat2.get('name', feat2.get('name2', 'unnamed'))
+                        overlaps.append({
+                            'feature1': name1,
+                            'chrom': chrom1,
+                            'start1': start1,
+                            'end1': end1,
+                            'feature2': name2,
+                            'start2': start2,
+                            'end2': end2
+                        })
+                        break  # Found overlap for this feat1, move to next
+            
+            print(f"Found {len(overlaps)} overlapping features")
+            
+            # Sort overlaps by genomic position (chromosome then start coordinate)
+            def sort_key(overlap):
+                chrom = overlap['chrom']
+                # Extract numeric part of chromosome for proper sorting (chr1, chr2, ..., chr10, chr11, etc.)
+                if chrom.startswith('chr'):
+                    chrom_num = chrom[3:]
+                    # Handle chrX, chrY, chrM specially
+                    if chrom_num == 'X':
+                        return (23, overlap['start1'])
+                    elif chrom_num == 'Y':
+                        return (24, overlap['start1'])
+                    elif chrom_num == 'M':
+                        return (25, overlap['start1'])
+                    else:
+                        try:
+                            return (int(chrom_num), overlap['start1'])
+                        except ValueError:
+                            return (26, overlap['start1'])  # Other chromosomes
+                return (27, overlap['start1'])  # Non-chr format
+            
+            overlaps.sort(key=sort_key)
+            
+            # Format output
+            output = []
+            output.append(f"Track Intersection Analysis: {genome}")
+            output.append(f"Track 1: {track1_norm} ({len(features1)} features)")
+            output.append(f"Track 2: {track2_norm} ({len(features2)} features)")
+            if chrom:
+                output.append(f"Region: {chrom}")
+            output.append(f"Total overlaps found: {len(overlaps)}")
+            output.append("=" * 60)
+            
+            if overlaps:
+                output.append(f"\nFirst overlapping feature: {overlaps[0]['feature1']}")
+                output.append(f"  Location: {overlaps[0]['chrom']}:{overlaps[0]['start1']}-{overlaps[0]['end1']}")
+                output.append(f"  Overlaps with: {overlaps[0]['feature2']}")
+                output.append(f"  Location: {overlaps[0]['chrom']}:{overlaps[0]['start2']}-{overlaps[0]['end2']}")
+                
+                if len(overlaps) > 1:
+                    show_count = min(max_results, len(overlaps))
+                    output.append(f"\nShowing first {show_count} of {len(overlaps)} overlaps:")
+                    for i, overlap in enumerate(overlaps[:show_count], 1):
+                        output.append(f"\n{i}. {overlap['feature1']} ({overlap['chrom']}:{overlap['start1']}-{overlap['end1']})")
+                        output.append(f"   ∩ {overlap['feature2']} ({overlap['chrom']}:{overlap['start2']}-{overlap['end2']})")
+            else:
+                output.append("\nNo overlapping features found.")
+            
+            return "\n".join(output)
+            
+        except Exception as e:
+            import traceback
+            return f"Track intersection failed: {str(e)}\n{traceback.format_exc()}"
 
 
 if __name__ == "__main__":

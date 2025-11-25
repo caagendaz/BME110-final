@@ -8,6 +8,7 @@ from emboss_wrapper import EMBOSSWrapper
 from nlp_handler import NLPHandler
 import traceback
 import os
+from datetime import datetime
 
 
 # Page configuration
@@ -224,19 +225,21 @@ def main():
     
     # Main interface tabs
     if current_mode == 'cloud':
-        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
             "🤖 Natural Language Query",
             "🔧 Manual Tool Selection",
             "🌐 Genome Browser Query",
             "📁 FASTA Upload & Batch",
+            "📋 Command Log",
             "📖 Documentation"
         ])
     else:
         # Local mode: hide genome browser tab (requires internet)
-        tab1, tab2, tab4, tab5 = st.tabs([
+        tab1, tab2, tab4, tab5, tab6 = st.tabs([
             "🤖 Natural Language Query",
             "🔧 Manual Tool Selection",
             "📁 FASTA Upload & Batch",
+            "📋 Command Log",
             "📖 Documentation"
         ])
         tab3 = None  # No genome browser in local mode
@@ -1201,8 +1204,79 @@ GCTAGCTAGCTAGCTA
             Simply upload your FASTA file and select any tool from the dropdown.
             """)
     
-    # TAB 5: Documentation
+    # TAB 5: Command Log (NEW - Shows detailed execution history)
     with tab5:
+        st.subheader("📋 Command Execution Log")
+        st.write("View detailed logs of all commands executed in this session for debugging and verification.")
+        
+        # Get the command log from emboss wrapper
+        log_entries = emboss.get_command_log()
+        
+        if not log_entries:
+            st.info("No commands executed yet. Run some queries to see the execution log here.")
+        else:
+            # Summary stats
+            total_commands = len(log_entries)
+            successful_commands = sum(1 for entry in log_entries if entry['success'])
+            failed_commands = total_commands - successful_commands
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Total Commands", total_commands)
+            with col2:
+                st.metric("Successful", successful_commands)
+            with col3:
+                st.metric("Failed", failed_commands)
+            
+            st.markdown("---")
+            
+            # Button to clear log
+            if st.button("🗑️ Clear Log"):
+                emboss.clear_log()
+                st.rerun()
+            
+            # Download button for log
+            log_text = emboss.get_formatted_log()
+            st.download_button(
+                label="📥 Download Log as Text",
+                data=log_text,
+                file_name=f"bioquery_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                mime="text/plain"
+            )
+            
+            st.markdown("---")
+            
+            # Display each log entry
+            for i, entry in enumerate(reversed(log_entries), 1):  # Show newest first
+                entry_num = len(log_entries) - i + 1
+                
+                # Color-code by success/failure
+                if entry['success']:
+                    status_emoji = "✅"
+                    border_color = "#4caf50"
+                else:
+                    status_emoji = "❌"
+                    border_color = "#f44336"
+                
+                with st.expander(f"{status_emoji} Command #{entry_num}: {entry['tool']} - {entry['timestamp']}", expanded=(i==1)):
+                    st.markdown(f"**Tool:** `{entry['tool']}`")
+                    st.markdown(f"**Status:** {status_emoji} {'SUCCESS' if entry['success'] else 'FAILED'}")
+                    st.markdown(f"**Timestamp:** {entry['timestamp']}")
+                    
+                    st.markdown("**Parameters:**")
+                    param_lines = []
+                    for key, value in entry['parameters'].items():
+                        param_lines.append(f"- `{key}`: {value}")
+                    st.markdown("\n".join(param_lines))
+                    
+                    if entry['error']:
+                        st.error(f"**Error:** {entry['error']}")
+                    else:
+                        st.markdown("**Result Preview:**")
+                        st.code(entry['result_preview'], language='text')
+    
+    # TAB 6: Documentation
+    with tab6:
         st.subheader("How to use BioQuery Local")
         
         st.markdown("""
