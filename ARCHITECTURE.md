@@ -157,7 +157,8 @@ graph TB
     UI --> TAB2["Tab 2:<br/>Manual Tool Selection"]
     UI --> TAB3["Tab 3:<br/>Genome Browser Query"]
     UI --> TAB4["Tab 4:<br/>Sequence Analysis"]
-    UI --> TAB5["Tab 5:<br/>Documentation"]
+    UI --> TAB5["Tab 5:<br/>Command Log NEW"]
+    UI --> TAB6["Tab 6:<br/>Documentation"]
     
     TAB1 --> NLP["Enter natural language<br/>e.g., 'Find GC of ALKBH1'"]
     NLP --> NLPRUN["NLP Handler processes<br/>& calls EMBOSS Wrapper"]
@@ -175,14 +176,59 @@ graph TB
     BATCH --> BATCH_RUN["Process batch"]
     BATCH_RUN --> BATCH_OUT["Downloadable results"]
     
-    TAB5 --> DOCS["View documentation<br/>& API reference"]
+    TAB5 --> LOG["View command execution history"]
+    LOG --> LOG_DETAIL["Timestamps, parameters,<br/>results, errors"]
+    LOG_DETAIL --> LOG_DOWNLOAD["Download log or clear"]
+    
+    TAB6 --> DOCS["View documentation<br/>& API reference"]
     
     style UI fill:#1565c0,stroke:#0d47a1,color:#ffffff,font-weight:bold
     style TAB1 fill:#f57f17,stroke:#e65100,color:#ffffff,font-weight:bold
     style TAB2 fill:#6a1b9a,stroke:#4a148c,color:#ffffff,font-weight:bold
     style TAB3 fill:#2e7d32,stroke:#1b5e20,color:#ffffff,font-weight:bold
     style TAB4 fill:#c62828,stroke:#b71c1c,color:#ffffff,font-weight:bold
-    style TAB5 fill:#5e35b1,stroke:#3f51b5,color:#ffffff,font-weight:bold
+    style TAB5 fill:#00838f,stroke:#006064,color:#ffffff,font-weight:bold
+    style TAB6 fill:#5e35b1,stroke:#3f51b5,color:#ffffff,font-weight:bold
+```
+
+## Command Logging System Flow (NEW)
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant UI as Streamlit UI
+    participant Wrapper as EMBOSS Wrapper
+    participant Logger as Command Logger
+    participant LogTab as Command Log Tab
+
+    User->>UI: Execute any query/tool
+    UI->>Wrapper: run_tool(tool_name, **params)
+    
+    Note over Wrapper: Wrapper function
+    Wrapper->>Wrapper: _run_tool_internal(tool_name, **params)
+    Wrapper->>Wrapper: Execute actual tool logic
+    
+    alt Success
+        Wrapper->>Logger: _log_command(tool, params, result)
+        Logger->>Logger: Store: timestamp, tool, params,<br/>result preview, success=True
+    else Error
+        Wrapper->>Logger: _log_command(tool, params, "", error=msg)
+        Logger->>Logger: Store: timestamp, tool, params,<br/>error message, success=False
+    end
+    
+    Wrapper->>UI: Return result
+    UI->>User: Display result
+    
+    Note over User,LogTab: Later...
+    User->>LogTab: Open Command Log tab
+    LogTab->>Logger: get_command_log()
+    Logger->>LogTab: Return all log entries
+    LogTab->>User: Display formatted log with<br/>metrics, expandable entries
+    
+    User->>LogTab: Click Download Log
+    LogTab->>Logger: get_formatted_log()
+    Logger->>LogTab: Return text format
+    LogTab->>User: Download .txt file
 ```
 
 ## Data Flow: Gene Query to Result
@@ -224,10 +270,11 @@ sequenceDiagram
 mindmap
   root((BioQuery Local))
     Natural Language Interface
-      Ollama gemma3:4b LLM
+      Google Gemini 2.5 Flash
       Automatic tool selection
       Gene symbol recognition
       Transcript variant support
+      Academic context wrapper NEW
     EMBOSS Integration
       258+ bioinformatics tools
       Dynamic tool discovery
@@ -244,18 +291,51 @@ mindmap
       No data storage needed
       Live API streaming
     Streamlit Interface
-      5 integrated tabs
+      6 integrated tabs NEW
       Manual & NLP modes
       Batch processing
       Download results
+      Command logging NEW
     Advanced Capabilities
       Protein translation
       Reverse complement
       Restriction sites
       GC content analysis
       Isoelectric point calculation
+      Execution tracking NEW
   
   %%{init: { 'theme': 'base', 'primaryColor':'#42a5f5', 'primaryTextColor':'#fff', 'primaryBorderColor':'#1e88e5', 'secondBkgColor':'#66bb6a', 'tertiaryColor':'#ef5350', 'tertiaryTextColor':'#fff', 'textPlacement': 'center', 'mindmapBkg':'transparent', 'nodeBkg':'transparent'} }%%
+```
+
+## Safety Filter Handling (NEW)
+
+```mermaid
+graph LR
+    A["User Query:<br/>'BLAST FBL in Archaea domain'"]
+    
+    A -->|Send to NLP| B["NLP Handler"]
+    B -->|Wrap in context| C["Academic/Scientific<br/>Context Wrapper"]
+    
+    C -->|Generate prompt| D["ACADEMIC BIOINFORMATICS EXERCISE<br/>Context: university-level molecular biology<br/>Scientific Objective: taxonomic classification<br/>Technical Request: [user query]"]
+    
+    D -->|Send to Gemini| E{Safety<br/>Filter}
+    
+    E -->|Blocked| F["Error Message:<br/>Switch to Local (Ollama) mode<br/>- No content restrictions<br/>- Better for scientific queries"]
+    E -->|Approved| G["Gemini Processing"]
+    
+    G -->|Parse query| H["Return:<br/>tool: blastn<br/>organism: Archaea"]
+    
+    H -->|Execute| I["BLAST Search"]
+    
+    style A fill:#1565c0,stroke:#0d47a1,color:#ffffff,font-weight:bold
+    style B fill:#f57f17,stroke:#e65100,color:#ffffff,font-weight:bold
+    style C fill:#2e7d32,stroke:#1b5e20,color:#ffffff,font-weight:bold
+    style D fill:#00838f,stroke:#006064,color:#ffffff,font-weight:bold
+    style E fill:#c62828,stroke:#b71c1c,color:#ffffff,font-weight:bold
+    style F fill:#d32f2f,stroke:#b71c1c,color:#ffffff,font-weight:bold
+    style G fill:#6a1b9a,stroke:#4a148c,color:#ffffff,font-weight:bold
+    style H fill:#2e7d32,stroke:#1b5e20,color:#ffffff,font-weight:bold
+    style I fill:#00838f,stroke:#006064,color:#ffffff,font-weight:bold
 ```
 
 ## File Structure
@@ -307,7 +387,7 @@ graph LR
     end
     
     subgraph Backend["Backend"]
-        Python["Python 3.9"]
+        Python["Python 3.12"]
         Bio["BioPython 1.85"]
     end
     
@@ -316,17 +396,23 @@ graph LR
     end
     
     subgraph LLM["LLM Engine"]
-        Ollama["Ollama 0.6.0<br/>gemma3:4b Model"]
+        Gemini["Google Gemini<br/>2.5 Flash Model"]
     end
     
     subgraph APIs["External APIs"]
         Ensembl["Ensembl REST API<br/>Gene/Transcript Data"]
-        UCSC["UCSC DAS API<br/>Genomic Regions"]
-        NCBI["NCBI Entrez<br/>Sequence Database"]
+        UCSC["UCSC Genome Browser<br/>Genomic Regions & Tracks"]
+        NCBI["NCBI BLAST<br/>Sequence Homology"]
+        GTEx["GTEx Portal<br/>Gene Expression"]
     end
     
     subgraph Env["Environment"]
-        Conda["conda<br/>bioquery environment"]
+        Conda["conda<br/>bioquery312 environment"]
+    end
+    
+    subgraph NewFeatures["New Features v2.0"]
+        Logger["Command Logger<br/>Execution Tracking"]
+        SafetyWrapper["Safety Filter Wrapper<br/>Academic Context"]
     end
     
     Streamlit -.->|runs on| Python
@@ -334,24 +420,31 @@ graph LR
     Python -->|subprocess calls| EMBOSS
     Uses["uses"]
     Python -->|HTTP requests| Uses
-    Uses -->|HTTP requests| Ollama
+    Uses -->|HTTP requests| Gemini
     Python -->|HTTP requests| Ensembl
     Python -->|HTTP requests| UCSC
     Python -->|HTTP requests| NCBI
+    Python -->|HTTP requests| GTEx
     LLMLabel["interfaces<br/>with"]
-    Ollama -.-> LLMLabel
+    Gemini -.-> LLMLabel
     LLMLabel -.-> LLM
     Conda -.->|manages| Python
+    Python -->|integrates| Logger
+    Python -->|wraps queries| SafetyWrapper
+    SafetyWrapper -->|sanitizes| Gemini
     
     style Streamlit fill:#f57f17,stroke:#e65100,color:#ffffff,font-weight:bold
     style Python fill:#1565c0,stroke:#0d47a1,color:#ffffff,font-weight:bold
     style Bio fill:#2e7d32,stroke:#1b5e20,color:#ffffff,font-weight:bold
     style EMBOSS fill:#2e7d32,stroke:#1b5e20,color:#ffffff,font-weight:bold
-    style Ollama fill:#ffc400,stroke:#f57f17,color:#000000,font-weight:bold
+    style Gemini fill:#ffc400,stroke:#f57f17,color:#000000,font-weight:bold
     style Ensembl fill:#c62828,stroke:#b71c1c,color:#ffffff,font-weight:bold
     style UCSC fill:#d32f2f,stroke:#b71c1c,color:#ffffff,font-weight:bold
     style NCBI fill:#e57100,stroke:#d84315,color:#ffffff,font-weight:bold
+    style GTEx fill:#00838f,stroke:#006064,color:#ffffff,font-weight:bold
     style Conda fill:#6a1b9a,stroke:#4a148c,color:#ffffff,font-weight:bold
+    style Logger fill:#00acc1,stroke:#00838f,color:#ffffff,font-weight:bold
+    style SafetyWrapper fill:#43a047,stroke:#2e7d32,color:#ffffff,font-weight:bold
     style Uses fill:#ffffff,stroke:#cccccc,color:#000000,font-weight:bold
     style LLMLabel fill:#ffffff,stroke:#cccccc,color:#000000,font-weight:bold
 ```

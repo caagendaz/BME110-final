@@ -15,9 +15,11 @@ A Streamlit web application that uses natural language AI (Google Gemini) to con
 - 🧬 **GTEx Integration**: Query gene expression across 54 human tissues from GTEx Portal
 - 📊 **Multi-Step Workflows**: Chain operations together (e.g., "find gene ALKBH1 then BLAST it")
 - 🧬 **DNA/RNA Conversion**: Convert between DNA and RNA sequences (T↔U)
+- 📋 **Command Logging**: Detailed execution logs for debugging and documentation (NEW!)
+- 🛡️ **Enhanced Safety Filters**: Improved handling of scientific terminology in AI queries
 - 🎯 **AI-Powered**: Google Gemini API for intelligent tool selection and parameter extraction
-- 🌐 **Web Interface**: Beautiful Streamlit UI with 5 integrated tabs
-- 💾 **Results Export**: Download analysis results as text files
+- 🌐 **Web Interface**: Beautiful Streamlit UI with 6 integrated tabs
+- 💾 **Results Export**: Download analysis results and execution logs as text files
 
 ## Quick Start
 
@@ -129,6 +131,23 @@ Each question gets its own result section with expand/collapse capability.
 4. Click the tool button
 5. Results appear as formatted output
 
+### Method 3: Command Log (Debugging & Documentation)
+1. Go to the **"📋 Command Log"** tab
+2. View all executed commands with:
+   - Timestamp and tool name
+   - All parameters used (with smart truncation for long sequences)
+   - Result previews
+   - Success/failure status
+   - Error messages (if any)
+3. Download log as text file for assignment documentation
+4. Clear log to start fresh session
+
+**Use this for:**
+- Verifying what commands were actually executed
+- Debugging unexpected results
+- Documenting your workflow for assignments
+- Understanding multi-step operations
+
 ## Available Tools
 
 | Tool | Description | Input | Example Query |
@@ -186,11 +205,14 @@ bme110/
 
 1. **User Input** → Streamlit UI collects natural language query or gene symbol
 2. **NLP Processing** → Google Gemini API (gemini-2.5-flash) interprets the query and selects appropriate tool(s)
+   - Uses academic/scientific context wrapper to bypass false-positive safety filters
 3. **Parameter Extraction** → Gemini extracts sequence data, gene names, and parameters from query
 4. **Gene Resolution** (if applicable) → Ensembl API fetches gene/transcript information
 5. **Tool Execution** → EMBOSSWrapper runs EMBOSS tools, BLAST, BEDTools, or other APIs
+   - **NEW**: All executions are automatically logged with timestamp, parameters, and results
 6. **Multi-Step Chaining** (if applicable) → Automatically chains results between steps
 7. **Results Display** → Streamlit displays formatted results with download option
+8. **Command Logging** → View detailed execution history in Command Log tab
 
 ### Key Components
 
@@ -199,6 +221,7 @@ bme110/
 - **BioPython BLAST**: Remote NCBI BLAST searches (Bio.Blast.NCBIWWW, Bio.Blast.NCBIXML)
 - **Multi-Step Execution**: Chain operations with automatic result passing
 - **Smart Parameter Handling**: Automatically fetches sequences when gene names are provided
+- **Command Logging System**: Tracks all executions for debugging and documentation
 
 ## System Requirements
 
@@ -213,7 +236,7 @@ bme110/
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │          Streamlit Web Interface (src/app.py)                   │
-│              4 Tabs: NLP | Manual | Genome | Documentation      │
+│         6 Tabs: NLP | Manual | Genome | Batch | Log | Docs     │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  ┌──────────────────────┐  ┌─────────────────────────────────┐ │
@@ -225,9 +248,10 @@ bme110/
 │  │  • Multi-Question    │  │ • BLAST integration (BioPython) │ │
 │  │  • Multi-Step        │  │ • BLAT search (UCSC)            │ │
 │  │  • Param Extract     │  │ • BEDTools (genomic overlaps)   │ │
-│  └────────┬─────────────┘  │ • GTEx expression links         │ │
-│           │                │ • DNA/RNA conversion            │ │
+│  │  • Safety Wrapper    │  │ • GTEx expression links         │ │
+│  └────────┬─────────────┘  │ • DNA/RNA conversion            │ │
 │           │                │ • Protein analysis (pepstats)   │ │
+│           │                │ • Command logging (NEW!)        │ │
 │           └────┬──────────►└────┬────────────────────────────┘ │
 └────────────────┼───────────────┼──────────────────────────────┘
                  │               │
@@ -238,8 +262,8 @@ bme110/
         │ • NLP parsing    │  │  • Ensembl REST API         │
         │ • Tool routing   │  │  • NCBI BLAST (remote)      │
         │ • Multi-question │  │  • UCSC Genome Browser API  │
-        └──────────────────┘  │  • GTEx Portal (links)      │
-                              └─────────────────────────────┘
+        │ • Safety bypass  │  │  • GTEx Portal (links)      │
+        └──────────────────┘  └─────────────────────────────┘
 ```
 
 ### Data Flow Example: Gene-Based BLAST
