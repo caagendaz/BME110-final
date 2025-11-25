@@ -12,6 +12,7 @@ from Bio import Entrez
 import requests
 import json
 from datetime import datetime
+import traceback
 
 
 class EMBOSSWrapper:
@@ -75,7 +76,11 @@ class EMBOSSWrapper:
             'articles': 'pubmed_search',
             'overlap': 'track_intersection',
             'intersect_tracks': 'track_intersection',
-            'track_overlap': 'track_intersection'
+            'track_overlap': 'track_intersection',
+            'neighboring_genes': 'find_neighboring_genes',
+            'flanking_genes': 'find_neighboring_genes',
+            'genes_near': 'find_neighboring_genes',
+            'neighbor_genes': 'find_neighboring_genes'
         }
         
         # Tool descriptions for user guidance
@@ -1440,6 +1445,13 @@ Keep it conversational and friendly."""
                 chrom=kwargs.get('chrom', None),
                 max_results=int(kwargs.get('max_results', 10))
             )
+        elif emboss_name == 'find_neighboring_genes':
+            # Find genes neighboring a target gene
+            return self.find_neighboring_genes(
+                gene_name=kwargs.get('gene_name', ''),
+                genome=kwargs.get('genome', 'hg38'),
+                track=kwargs.get('track', 'knownGene')
+            )
         else:
             # Generic EMBOSS tool fallback
             return self._run_generic_emboss_tool(emboss_name, **kwargs)
@@ -1850,6 +1862,147 @@ Keep it conversational and friendly."""
                 'success': False,
                 'error': f"UCSC query failed: {str(e)}"
             }
+
+    def find_neighboring_genes(self, gene_name: str, genome: str = "hg38", track: str = "knownGene") -> str:
+        """Find genes neighboring a target gene on the chromosome
+        
+        Args:
+            gene_name: Target gene symbol (e.g., 'CARS1')
+            genome: Genome assembly (default: 'hg38')
+            track: Gene track to use (default: 'knownGene' for GENCODE)
+        
+        Returns:
+            Formatted string with neighboring genes and distances
+        """
+        try:
+            print(f"Finding neighboring genes for {gene_name}...")
+            
+            # Step 1: Get target gene location from Ensembl
+            ensembl_url = f"https://rest.ensembl.org/lookup/symbol/homo_sapiens/{gene_name}"
+            headers = {"Content-Type": "application/json"}
+            
+            response = requests.get(ensembl_url, headers=headers, timeout=30)
+            if response.status_code != 200:
+                return f"Error: Could not find gene {gene_name} in Ensembl"
+            
+            target_gene = response.json()
+            chrom = f"chr{target_gene['seq_region_name']}"
+            target_start = target_gene['start']
+            target_end = target_gene['end']
+            
+            print(f"Target gene {gene_name}: {chrom}:{target_start}-{target_end}")
+            
+            # Step 2: Query UCSC for all genes on this chromosome
+            # Get a wider region to find neighbors
+            region_start = max(1, target_start - 5000000)  # 5Mb upstream
+            region_end = target_end + 5000000  # 5Mb downstream
+            
+            ucsc_url = f"https://api.genome.ucsc.edu/getData/track"
+            params = {
+                'genome': genome,
+                'track': track,
+                'chrom': chrom,
+                'start': region_start,
+                'end': region_end
+            }
+            
+            print(f"Querying UCSC for genes in {chrom}:{region_start}-{region_end}...")
+            response = requests.get(ucsc_url, params=params, timeout=60)
+            
+            if response.status_code != 200:
+                return f"Error: UCSC API returned status {response.status_code}"
+            
+            data = response.json()
+            
+            # Extract genes from response
+            genes = data.get(track, [])
+            if isinstance(genes, dict):
+                # If returned as dict of chromosomes
+                genes = genes.get(chrom, [])
+            
+            print(f"Found {len(genes)} genes in region")
+            
+            # Step 3: Find protein-coding genes to the left and right
+            left_genes = {}  # Use dict to deduplicate by gene name
+            right_genes = {}
+            
+            for gene in genes:
+                gene_start = gene.get('chromStart', gene.get('txStart', 0))
+                gene_end = gene.get('chromEnd', gene.get('txEnd', 0))
+                # Prefer geneName (gene symbol) over name2 (transcript ID)
+                gene_symbol = gene.get('geneName', gene.get('name2', gene.get('name', 'Unknown')))
+                gene_type = gene.get('geneType', gene.get('type', 'unknown'))
+                
+                # Skip non-protein-coding genes
+                if gene_type != 'protein_coding':
+                    continue
+                
+                # Skip the target gene itself
+                if gene_symbol.upper() == gene_name.upper():
+                    continue
+                
+                # Genes to the left (end before target starts)
+                if gene_end < target_start:
+                    distance = target_start - gene_end
+                    # Keep only the closest transcript for each gene
+                    if gene_symbol not in left_genes or distance < left_genes[gene_symbol]['distance']:
+                        left_genes[gene_symbol] = {
+                            'name': gene_symbol,
+                            'start': gene_start,
+                            'end': gene_end,
+                            'distance': distance
+                        }
+                
+                # Genes to the right (start after target ends)
+                elif gene_start > target_end:
+                    distance = gene_start - target_end
+                    # Keep only the closest transcript for each gene
+                    if gene_symbol not in right_genes or distance < right_genes[gene_symbol]['distance']:
+                        right_genes[gene_symbol] = {
+                            'name': gene_symbol,
+                            'start': gene_start,
+                            'end': gene_end,
+                            'distance': distance
+                        }
+            
+            # Convert to lists and sort by distance
+            left_genes = sorted(left_genes.values(), key=lambda x: x['distance'])
+            right_genes = sorted(right_genes.values(), key=lambda x: x['distance'])
+            
+            # Format output
+            output = f"Neighboring Protein-Coding Genes for {gene_name}\n"
+            output += "=" * 70 + "\n\n"
+            output += f"Target Gene: {gene_name}\n"
+            output += f"Location: {chrom}:{target_start:,}-{target_end:,}\n"
+            output += f"Genome: {genome}, Track: {track}\n\n"
+            
+            output += "Protein-Coding Genes to the LEFT (upstream):\n"
+            output += "-" * 70 + "\n"
+            if left_genes:
+                for i, gene in enumerate(left_genes[:5], 1):  # Show top 5
+                    output += f"{i}. {gene['name']}\n"
+                    output += f"   Distance: ~{gene['distance']:,} nucleotides\n"
+                    output += f"   Position: {chrom}:{gene['start']:,}-{gene['end']:,}\n\n"
+            else:
+                output += "No protein-coding genes found within 5Mb upstream\n\n"
+            
+            output += "Protein-Coding Genes to the RIGHT (downstream):\n"
+            output += "-" * 70 + "\n"
+            if right_genes:
+                for i, gene in enumerate(right_genes[:5], 1):  # Show top 5
+                    output += f"{i}. {gene['name']}\n"
+                    output += f"   Distance: ~{gene['distance']:,} nucleotides\n"
+                    output += f"   Position: {chrom}:{gene['start']:,}-{gene['end']:,}\n\n"
+            else:
+                output += "No protein-coding genes found within 5Mb downstream\n\n"
+            
+            output += f"\nNote: Showing only protein-coding genes (light blue in UCSC Browser).\n"
+            output += f"Distance is measured from gene boundaries (not transcription start sites).\n"
+            
+            return output
+            
+        except Exception as e:
+            return f"Error finding neighboring genes: {str(e)}\n{traceback.format_exc()}"
 
 
     def gtex_expression(self, gene_name: str, top_n: int = 10) -> Dict:
