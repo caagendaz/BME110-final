@@ -307,20 +307,31 @@ def main():
                     
                     # Look for FASTA format (>header followed by sequence)
                     if '>' in user_query:
-                        parts = user_query.split('>', 1)
-                        if len(parts) == 2:
-                            # Extract the instruction before the sequence
-                            cleaned_query = parts[0].strip()
-                            # Parse the FASTA part
-                            fasta_content = '>' + parts[1]
-                            header_end = fasta_content.find('\n')
-                            if header_end > 0:
-                                sequence = fasta_content[header_end:].replace('\n', '').replace(' ', '').strip()
-                                if len(sequence) > 20:  # Only consider it a sequence if it's substantial
-                                    extracted_sequence = sequence
-                                    # If there's no instruction, default to showing what operations are available
-                                    if not cleaned_query:
-                                        cleaned_query = "analyze this sequence"
+                        import re
+                        # Extract all FASTA sequences
+                        fasta_pattern = r'>([^\n]+)\n([ATCGNatcgn\s]+?)(?=>|\Z)'
+                        matches = re.findall(fasta_pattern, user_query, re.IGNORECASE | re.DOTALL)
+                        
+                        if matches:
+                            # Get text before first > as the instruction
+                            first_gt = user_query.index('>')
+                            text_before = user_query[:first_gt].strip()
+                            
+                            # Extract key context words from the text
+                            context_keywords = ['characterize', 'analyze', 'identify', 'what is', 'mystery', 
+                                              'sequence', 'genome browser', 'hg19', 'hg38', 'functional genomics']
+                            found_keywords = [kw for kw in context_keywords if kw.lower() in text_before.lower()]
+                            
+                            # Build cleaned query from context
+                            if found_keywords:
+                                cleaned_query = f"Characterize this sequence using hg19"
+                            else:
+                                cleaned_query = text_before if text_before else "analyze this sequence"
+                            
+                            # Take first sequence for now (we can process multiple later)
+                            if matches:
+                                header, seq = matches[0]
+                                extracted_sequence = seq.replace('\n', '').replace(' ', '').strip().upper()
                     
                     # Look for long continuous sequences without FASTA format
                     if not extracted_sequence:
@@ -332,82 +343,101 @@ def main():
                             # Remove the sequence from the query
                             cleaned_query = user_query.replace(seq_match.group(0), '').strip()
                             if not cleaned_query:
-                                cleaned_query = "analyze this sequence"
+                                cleaned_query = "characterize this sequence using hg19"
                     
                     # Check if query references uploaded file
                     file_keywords = ['file', 'uploaded', 'fasta', 'sequences in', 'all sequences']
                     references_file = any(keyword in user_query.lower() for keyword in file_keywords)
                     has_uploaded = 'uploaded_sequences' in st.session_state
                     
-                    # If we extracted a sequence from the query, handle it specially
+                    # If we extracted a sequence from the query, send to NLP with the sequence
                     if extracted_sequence and not references_file:
                         st.markdown('<div class="tool-box">', unsafe_allow_html=True)
                         st.success(f"✓ Detected sequence in query ({len(extracted_sequence)} bp)")
                         st.markdown('</div>', unsafe_allow_html=True)
                         
-                        # Detect operations from the cleaned query
-                        query_lower = cleaned_query.lower()
-                        detected_operations = []
-                        detected_tools = set()
+                        # Build query for NLP: use cleaned query with explicit sequence parameter
+                        # This allows NLP to intelligently decide what to do
+                        nlp_query = f"{cleaned_query} [sequence provided: {len(extracted_sequence)} bp]"
                         
-                        # Define keyword mappings to tools (same as file processing)
-                        tool_keywords = [
-                            ('gc content', 'gc_content', {}, 'Calculate GC content'),
-                            ('reverse complement', 'reverse', {}, 'Reverse complement'),
-                            ('isoelectric point', 'iep', {}, 'Calculate isoelectric point'),
-                            ('molecular weight', 'pepstats', {}, 'Get protein statistics including molecular weight'),
-                            ('protein stats', 'pepstats', {}, 'Get protein statistics'),
-                            ('open reading', 'orf', {}, 'Find open reading frames'),
-                            ('gc', 'gc_content', {}, 'Calculate GC content'),
-                            ('translate', 'translate', {}, 'Translate to protein'),
-                            ('reverse', 'reverse', {}, 'Reverse complement'),
-                            ('isoelectric', 'iep', {}, 'Calculate isoelectric point'),
-                            ('pepstats', 'pepstats', {}, 'Get protein statistics'),
-                            ('orf', 'orf', {}, 'Find open reading frames'),
-                        ]
+                        # Parse with NLP to get intelligent tool chaining
+                        success, result = nlp.parse_user_query(nlp_query)
                         
-                        # Check which operations are mentioned
-                        for keyword, tool, params, explanation in tool_keywords:
-                            if keyword in query_lower and tool not in detected_tools:
-                                detected_operations.append({
-                                    'tool': tool,
-                                    'parameters': params.copy(),
-                                    'explanation': explanation
-                                })
-                                detected_tools.add(tool)
-                        
-                        if detected_operations:
-                            st.info(f"**Detected {len(detected_operations)} operation(s)**")
-                            
-                            # Process each detected operation
-                            for op_idx, op_info in enumerate(detected_operations, 1):
-                                if len(detected_operations) > 1:
-                                    st.markdown(f"### Operation {op_idx}: {op_info['explanation']}")
-                                else:
-                                    st.info(f"**Action:** {op_info['explanation']}")
-                                
-                                st.write(f"**Tool:** {op_info['tool']}")
-                                
-                                try:
-                                    # Execute tool with the extracted sequence
-                                    params = op_info['parameters'].copy()
-                                    params['sequence'] = extracted_sequence
-                                    result = emboss.run_tool(op_info['tool'], **params)
-                                    
-                                    st.markdown("#### Results:")
-                                    st.code(result, language="text")
-                                    
-                                except Exception as e:
-                                    st.error(f"Error: {str(e)}")
-                                
-                                if len(detected_operations) > 1 and op_idx < len(detected_operations):
-                                    st.markdown("---")
+                        if success:
+                            # Inject the extracted sequence into parameters
+                            if 'steps' in result:
+                                # Multi-step workflow
+                                for step in result['steps']:
+                                    if 'sequence' in step.get('parameters', {}):
+                                        step['parameters']['sequence'] = extracted_sequence
+                            elif 'parameters' in result:
+                                # Single step
+                                if 'sequence' in result['parameters']:
+                                    result['parameters']['sequence'] = extracted_sequence
                         else:
-                            st.warning("⚠️ Couldn't detect specific operations. Try: 'get gc content', 'translate', 'reverse complement', 'isoelectric point'")
-                        
-                        # Mark as handled so we don't show error message below
-                        success = True
-                        result = {'handled': True}
+                            # NLP failed, fall back to simple keyword detection
+                            query_lower = cleaned_query.lower()
+                            detected_operations = []
+                            detected_tools = set()
+                            
+                            # Define keyword mappings to tools
+                            tool_keywords = [
+                                ('gc content', 'gc_content', {}, 'Calculate GC content'),
+                                ('reverse complement', 'reverse', {}, 'Reverse complement'),
+                                ('isoelectric point', 'iep', {}, 'Calculate isoelectric point'),
+                                ('molecular weight', 'pepstats', {}, 'Get protein statistics including molecular weight'),
+                                ('protein stats', 'pepstats', {}, 'Get protein statistics'),
+                                ('open reading', 'orf', {}, 'Find open reading frames'),
+                                ('gc', 'gc_content', {}, 'Calculate GC content'),
+                                ('translate', 'translate', {}, 'Translate to protein'),
+                                ('reverse', 'reverse', {}, 'Reverse complement'),
+                                ('isoelectric', 'iep', {}, 'Calculate isoelectric point'),
+                                ('pepstats', 'pepstats', {}, 'Get protein statistics'),
+                                ('orf', 'orf', {}, 'Find open reading frames'),
+                            ]
+                            
+                            # Check which operations are mentioned
+                            for keyword, tool, params, explanation in tool_keywords:
+                                if keyword in query_lower and tool not in detected_tools:
+                                    detected_operations.append({
+                                        'tool': tool,
+                                        'parameters': params.copy(),
+                                        'explanation': explanation
+                                    })
+                                    detected_tools.add(tool)
+                            
+                            if detected_operations:
+                                st.info(f"**Detected {len(detected_operations)} operation(s)**")
+                                
+                                # Process each detected operation
+                                for op_idx, op_info in enumerate(detected_operations, 1):
+                                    if len(detected_operations) > 1:
+                                        st.markdown(f"### Operation {op_idx}: {op_info['explanation']}")
+                                    else:
+                                        st.info(f"**Action:** {op_info['explanation']}")
+                                    
+                                    st.write(f"**Tool:** {op_info['tool']}")
+                                    
+                                    try:
+                                        # Execute tool with the extracted sequence
+                                        params = op_info['parameters'].copy()
+                                        params['sequence'] = extracted_sequence
+                                        result = emboss.run_tool(op_info['tool'], **params)
+                                        
+                                        st.markdown("#### Results:")
+                                        st.code(result, language="text")
+                                        
+                                    except Exception as e:
+                                        st.error(f"Error: {str(e)}")
+                                    
+                                    if len(detected_operations) > 1 and op_idx < len(detected_operations):
+                                        st.markdown("---")
+                            else:
+                                st.warning("⚠️ Couldn't detect specific operations. Try: 'characterize this sequence', 'get gc content', 'translate', 'reverse complement'")
+                            
+                            # Mark as handled so we don't show error message below
+                            success = True
+                            result = {'handled': True}
                     
                     elif references_file and has_uploaded:
                         # Process query for each sequence in uploaded file

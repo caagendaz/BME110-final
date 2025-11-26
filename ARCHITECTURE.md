@@ -6,89 +6,210 @@
 graph TD
     UI["🌐 Streamlit Web App<br/>http://localhost:8501"]
     
-    subgraph Frontend["Frontend Layer"]
-        NLP["NLP Handler<br/>(nlp_handler.py)<br/>Ollama gemma3:4b"]
+    subgraph Frontend["Frontend Layer - Dual Mode"]
+        NLPRouter{NLP Mode<br/>Selection}
+        CloudNLP["Cloud Mode<br/>Google Gemini 2.5 Flash"]
+        LocalNLP["Local Mode<br/>Ollama gemma3:4b"]
+        FallbackNLP["Ollama Fallback<br/>(on Gemini safety filter)"]
         ManualTool["Manual Tool Selection"]
     end
     
-    subgraph Backend["Backend Processing"]
+    subgraph Backend["Backend Processing - Enhanced"]
         Wrapper["EMBOSS Wrapper<br/>(emboss_wrapper.py)<br/>258+ tools"]
         GeneResolver["Gene Symbol Resolver<br/>Ensembl API"]
         TranscriptFetcher["Transcript Fetcher<br/>Ensembl API"]
         ToolExecutor["EMBOSS Tool Executor<br/>Subprocess runner"]
+        NeighborGenes["Neighboring Genes Finder<br/>UCSC + Ensembl"]
+        BLATMapper["BLAT Sequence Mapper<br/>Genome Location"]
     end
     
     subgraph ExternalAPIs["External Databases"]
         Ensembl["Ensembl REST API<br/>Gene/Transcript Info"]
-        UCSC["UCSC Genome Browser<br/>Genomic Regions"]
-        NCBI["NCBI Entrez<br/>Sequence Download"]
+        UCSC["UCSC Genome Browser<br/>Genomic Regions & Tracks"]
+        NCBI["NCBI Entrez & BLAST<br/>Sequence Search"]
+        GTEx["GTEx Portal<br/>Gene Expression"]
+        PubMed["PubMed E-utilities<br/>Literature Search"]
     end
     
-    UI -->|Natural Language Query| NLP
+    UI -->|Natural Language Query| NLPRouter
     UI -->|Manual Input| ManualTool
     
-    NLP -->|Parse Query| Wrapper
+    NLPRouter -->|Cloud Mode Selected| CloudNLP
+    NLPRouter -->|Local Mode Selected| LocalNLP
+    CloudNLP -->|Safety Filter Triggered| FallbackNLP
+    
+    CloudNLP -->|Parse Query| Wrapper
+    LocalNLP -->|Parse Query| Wrapper
+    FallbackNLP -->|Parse Query| Wrapper
     ManualTool -->|Tool + Params| Wrapper
     
     Wrapper -->|Gene Symbol?| GeneResolver
+    Wrapper -->|Find Neighbors?| NeighborGenes
+    Wrapper -->|Map Sequence?| BLATMapper
+    
     GeneResolver -->|Query Gene Info| Ensembl
     Ensembl -->|Transcripts & IDs| TranscriptFetcher
     TranscriptFetcher -->|Fetch Sequence| Ensembl
     
-    Wrapper -->|Run EMBOSS Tool| ToolExecutor
-    ToolExecutor -->|Execute| Wrapper
+    NeighborGenes -->|Get Gene Location| Ensembl
+    NeighborGenes -->|Query Nearby Genes| UCSC
     
-    Wrapper -->|Genomic Region?| UCSC
-    Wrapper -->|Download Sequence?| NCBI
+    BLATMapper -->|BLAT Search| UCSC
+    BLATMapper -->|Get Annotations| UCSC
+    
+    Wrapper -->|Run EMBOSS Tool| ToolExecutor
+    Wrapper -->|BLAST Search| NCBI
+    Wrapper -->|Expression Data| GTEx
+    Wrapper -->|Literature Search| PubMed
+    
+    ToolExecutor -->|Execute| Wrapper
     
     Wrapper -->|Results| UI
     
     style UI fill:#1e88e5,stroke:#0d47a1,color:#ffffff,font-weight:bold
-    style NLP fill:#ff6f00,stroke:#e65100,color:#ffffff,font-weight:bold
+    style NLPRouter fill:#ff6f00,stroke:#e65100,color:#ffffff,font-weight:bold
+    style CloudNLP fill:#4caf50,stroke:#2e7d32,color:#ffffff,font-weight:bold
+    style LocalNLP fill:#9c27b0,stroke:#6a1b9a,color:#ffffff,font-weight:bold
+    style FallbackNLP fill:#ff9800,stroke:#e65100,color:#ffffff,font-weight:bold
     style ManualTool fill:#7b1fa2,stroke:#4a148c,color:#ffffff,font-weight:bold
     style Wrapper fill:#388e3c,stroke:#1b5e20,color:#ffffff,font-weight:bold
     style GeneResolver fill:#0097a7,stroke:#006064,color:#ffffff,font-weight:bold
     style TranscriptFetcher fill:#00838f,stroke:#004d40,color:#ffffff,font-weight:bold
     style ToolExecutor fill:#00796b,stroke:#004d40,color:#ffffff,font-weight:bold
+    style NeighborGenes fill:#1976d2,stroke:#0d47a1,color:#ffffff,font-weight:bold
+    style BLATMapper fill:#e91e63,stroke:#c2185b,color:#ffffff,font-weight:bold
     style Ensembl fill:#d32f2f,stroke:#b71c1c,color:#ffffff,font-weight:bold
     style UCSC fill:#f57c00,stroke:#e65100,color:#ffffff,font-weight:bold
     style NCBI fill:#fbc02d,stroke:#f57f17,color:#000000,font-weight:bold
+    style GTEx fill:#00acc1,stroke:#00838f,color:#ffffff,font-weight:bold
+    style PubMed fill:#8bc34a,stroke:#558b2f,color:#ffffff,font-weight:bold
 ```
 
-## Natural Language Query Flow
+## Natural Language Query Flow - Cloud & Local Modes
 
 ```mermaid
-graph LR
-    A["User Query<br/>e.g., 'Translate ALKBH1'"] -->|Send to Ollama| B["NLP Handler<br/>gemma3:4b Model"]
+graph TB
+    A["User Query<br/>e.g., 'Characterize mystery sequence'"] -->|Send to NLP| B{Mode<br/>Selection}
     
-    B -->|Parse with System Prompt| C{Query Type?}
+    B -->|Cloud Mode| C["Google Gemini<br/>2.5 Flash"]
+    B -->|Local Mode| D["Ollama<br/>gemma3:4b"]
     
-    C -->|Gene Query| D["→ gene_query tool<br/>gene_name: ALKBH1"]
-    C -->|EMBOSS Tool| E["→ translate tool<br/>gene_name: ALKBH1"]
-    C -->|Genome Region| F["→ genome_query<br/>chrom, start, end"]
-    C -->|Raw Sequence| G["→ tool<br/>sequence: ATGC..."]
+    C -->|Parse with System Prompt| E{Safety<br/>Filter?}
+    E -->|Blocked| F["⚠️ Fallback to Ollama<br/>(Cloud features remain active)"]
+    E -->|Approved| G["Gemini Processing"]
     
-    D -->|Return JSON| H["Tool + Parameters"]
-    E -->|Return JSON| H
-    F -->|Return JSON| H
-    G -->|Return JSON| H
+    F -->|Process Query| H{Query Type?}
+    G -->|Parse Query| H
+    D -->|Parse Query| H
     
-    H -->|Pass to EMBOSS Wrapper| I["Execute Operation"]
+    H -->|Characterize/Mystery| I["Multi-Step Workflow:<br/>1. BLAT - map to genome<br/>2. ucsc_table - gene overlaps<br/>3. BLAST - RNA database search"]
+    H -->|Gene Query| J["→ gene_query tool<br/>gene_name: ALKBH1"]
+    H -->|EMBOSS Tool| K["→ translate tool<br/>gene_name: ALKBH1"]
+    H -->|Neighboring Genes| L["→ find_neighboring_genes<br/>gene_name: CARS1"]
+    H -->|Genome Region| M["→ genome_query<br/>chrom, start, end"]
+    H -->|Raw Sequence| N["→ tool<br/>sequence: ATGC..."]
+    H -->|BLAST Search| O["→ blast/blastn/blastp<br/>exclude_taxa, organism, etc."]
+    
+    I -->|Return Steps JSON| P["Tool + Parameters"]
+    J -->|Return JSON| P
+    K -->|Return JSON| P
+    L -->|Return JSON| P
+    M -->|Return JSON| P
+    N -->|Return JSON| P
+    O -->|Return JSON| P
+    
+    P -->|Pass to EMBOSS Wrapper| Q["Execute Operation(s)"]
     
     style A fill:#1565c0,stroke:#0d47a1,color:#ffffff,font-weight:bold
-    style B fill:#1565c0,stroke:#0d47a1,color:#ffffff,font-weight:bold
-    style C fill:#f57f17,stroke:#e65100,color:#ffffff,font-weight:bold
-    style D fill:#2e7d32,stroke:#1b5e20,color:#ffffff,font-weight:bold
-    style E fill:#2e7d32,stroke:#1b5e20,color:#ffffff,font-weight:bold
-    style F fill:#2e7d32,stroke:#1b5e20,color:#ffffff,font-weight:bold
-    style G fill:#2e7d32,stroke:#1b5e20,color:#ffffff,font-weight:bold
-    style H fill:#00695c,stroke:#004d40,color:#ffffff,font-weight:bold
-    style I fill:#6a1b9a,stroke:#4a148c,color:#ffffff,font-weight:bold
+    style B fill:#ff6f00,stroke:#e65100,color:#ffffff,font-weight:bold
+    style C fill:#4caf50,stroke:#2e7d32,color:#ffffff,font-weight:bold
+    style D fill:#9c27b0,stroke:#6a1b9a,color:#ffffff,font-weight:bold
+    style E fill:#f57f17,stroke:#e65100,color:#ffffff,font-weight:bold
+    style F fill:#ff9800,stroke:#e65100,color:#ffffff,font-weight:bold
+    style G fill:#4caf50,stroke:#2e7d32,color:#ffffff,font-weight:bold
+    style H fill:#f57f17,stroke:#e65100,color:#ffffff,font-weight:bold
+    style I fill:#e91e63,stroke:#c2185b,color:#ffffff,font-weight:bold
+    style J fill:#2e7d32,stroke:#1b5e20,color:#ffffff,font-weight:bold
+    style K fill:#2e7d32,stroke:#1b5e20,color:#ffffff,font-weight:bold
+    style L fill:#1976d2,stroke:#0d47a1,color:#ffffff,font-weight:bold
+    style M fill:#2e7d32,stroke:#1b5e20,color:#ffffff,font-weight:bold
+    style N fill:#2e7d32,stroke:#1b5e20,color:#ffffff,font-weight:bold
+    style O fill:#00acc1,stroke:#00838f,color:#ffffff,font-weight:bold
+    style P fill:#00695c,stroke:#004d40,color:#ffffff,font-weight:bold
+    style Q fill:#6a1b9a,stroke:#4a148c,color:#ffffff,font-weight:bold
 ```
 
-## Gene-Based Tool Execution Pipeline
+## Mystery Sequence Characterization Workflow (NEW)
 
 ```mermaid
+graph TD
+    A["User: Paste assignment with<br/>FASTA sequences + questions"] 
+    
+    A -->|Smart FASTA Parser| B["Extract Context:<br/>- 'characterize'<br/>- 'mystery'<br/>- 'hg19'<br/>First sequence extracted"]
+    
+    B -->|Build Query| C["Cleaned Query:<br/>'Characterize this sequence using hg19'<br/>+ extracted sequence"]
+    
+    C -->|Send to NLP| D["NLP Creates Multi-Step:<br/>1. BLAT<br/>2. BLAST<br/>3. UCSC tracks (manual)"]
+    
+    D -->|Step 1: BLAT| E["Map to Genome<br/>Returns top hits with coordinates"]
+    
+    E -->|Extract Best Hit| F["chr6:135,418,563-135,418,717<br/>99.4% identity<br/>155 bp match"]
+    
+    F -->|Generate UCSC Links| G["UCSC Browser Links<br/>for manual inspection:<br/>- Gene annotations<br/>- Conservation tracks<br/>- ChromHMM states<br/>- POL2/POL3 ChIP-seq"]
+    
+    D -->|Step 2: BLAST| H["Search RefSeq RNA<br/>database=refseq_rna<br/>organism=Homo sapiens"]
+    
+    H -->|Top Matches| I["RNA Database Hits:<br/>- Accession IDs<br/>- Identity %<br/>- E-values<br/>- Gene names"]
+    
+    G -->|Manual Review| J["User clicks links to:<br/>a. Check gene overlaps<br/>b. View conservation (Multiz)<br/>c. Check chromHMM state<br/>d. Check POL2/3 signals"]
+    
+    I -->|Cross-reference| K["Match with:<br/>RNAcentral, Rfam, GtRNAdb"]
+    
+    J -->|Answer Questions| L["Complete Analysis:<br/>a. Gene name & function<br/>b. Neighboring genes<br/>c. Conservation across species<br/>d. Chromatin state<br/>e. Transcription evidence<br/>f. Database matches"]
+    
+    K -->|Combine Results| L
+    
+    style A fill:#1565c0,stroke:#0d47a1,color:#ffffff,font-weight:bold
+    style B fill:#f57f17,stroke:#e65100,color:#ffffff,font-weight:bold
+    style C fill:#9c27b0,stroke:#6a1b9a,color:#ffffff,font-weight:bold
+    style D fill:#e91e63,stroke:#c2185b,color:#ffffff,font-weight:bold
+    style E fill:#00acc1,stroke:#00838f,color:#ffffff,font-weight:bold
+    style F fill:#4caf50,stroke:#2e7d32,color:#ffffff,font-weight:bold
+    style G fill:#ff9800,stroke:#e65100,color:#ffffff,font-weight:bold
+    style H fill:#00acc1,stroke:#00838f,color:#ffffff,font-weight:bold
+    style I fill:#8bc34a,stroke:#558b2f,color:#ffffff,font-weight:bold
+    style J fill:#ff9800,stroke:#e65100,color:#ffffff,font-weight:bold
+    style K fill:#8bc34a,stroke:#558b2f,color:#ffffff,font-weight:bold
+    style L fill:#4caf50,stroke:#2e7d32,color:#ffffff,font-weight:bold
+```
+
+## Neighboring Genes Discovery Flow (NEW)
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant NLP as NLP Handler
+    participant Wrapper as EMBOSS Wrapper
+    participant Ensembl as Ensembl API
+    participant UCSC as UCSC REST API
+
+    User->>NLP: "What genes neighbor CARS1?"
+    NLP->>NLP: Parse → find_neighboring_genes
+    NLP->>Wrapper: tool='find_neighboring_genes'<br/>gene_name='CARS1', genome='hg38'
+    
+    Wrapper->>Ensembl: GET /lookup/symbol/homo_sapiens/CARS1
+    Ensembl->>Wrapper: chr11:3,011,986-3,051,922<br/>26 transcripts
+    
+    Note over Wrapper: Expand region ±500kb
+    Wrapper->>UCSC: GET /getData/track?genome=hg38<br/>&track=knownGene<br/>&chrom=chr11<br/>&start=2511986&end=3551922
+    
+    UCSC->>Wrapper: 47 gene annotations
+    
+    Note over Wrapper: Filter & process
+    Wrapper->>Wrapper: 1. Filter: geneType=='protein_coding'<br/>2. Calculate distances from CARS1<br/>3. Find closest left & right<br/>4. Deduplicate by gene symbol
+    
+    Wrapper->>User: LEFT: NAP1L4 (~8,536 bp)<br/>RIGHT: OSBPL5 (~29,493 bp)<br/>Plus top 5 each side with distances
+```
 graph TD
     A["User: 'Translate CARS1<br/>transcript variant 5'"] 
     
@@ -118,6 +239,78 @@ graph TD
     style H fill:#2e7d32,stroke:#1b5e20,color:#ffffff,font-weight:bold
     style I fill:#00695c,stroke:#004d40,color:#ffffff,font-weight:bold
     style J fill:#1565c0,stroke:#0d47a1,color:#ffffff,font-weight:bold
+```
+
+## Neighboring Genes Discovery Flow (NEW)
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant NLP as NLP Handler
+    participant Wrapper as EMBOSS Wrapper
+    participant Ensembl as Ensembl API
+    participant UCSC as UCSC REST API
+
+    User->>NLP: "What genes neighbor CARS1?"
+    NLP->>NLP: Parse → find_neighboring_genes
+    NLP->>Wrapper: tool='find_neighboring_genes'<br/>gene_name='CARS1', genome='hg38'
+    
+    Wrapper->>Ensembl: GET /lookup/symbol/homo_sapiens/CARS1
+    Ensembl->>Wrapper: chr11:3,011,986-3,051,922<br/>26 transcripts
+    
+    Note over Wrapper: Expand region ±500kb
+    Wrapper->>UCSC: GET /getData/track?genome=hg38<br/>&track=knownGene<br/>&chrom=chr11<br/>&start=2511986&end=3551922
+    
+    UCSC->>Wrapper: 47 gene annotations
+    
+    Note over Wrapper: Filter & process
+    Wrapper->>Wrapper: 1. Filter: geneType=='protein_coding'<br/>2. Calculate distances from CARS1<br/>3. Find closest left & right<br/>4. Deduplicate by gene symbol
+    
+    Wrapper->>User: LEFT: NAP1L4 (~8,536 bp)<br/>RIGHT: OSBPL5 (~29,493 bp)<br/>Plus top 5 each side with distances
+```
+
+## Mystery Sequence Characterization Workflow (NEW)
+
+```mermaid
+graph TD
+    A["User: Paste assignment with<br/>FASTA sequences + questions"] 
+    
+    A -->|Smart FASTA Parser| B["Extract Context:<br/>- 'characterize'<br/>- 'mystery'<br/>- 'hg19'<br/>First sequence extracted"]
+    
+    B -->|Build Query| C["Cleaned Query:<br/>'Characterize this sequence using hg19'<br/>+ extracted sequence"]
+    
+    C -->|Send to NLP| D["NLP Creates Multi-Step:<br/>1. BLAT<br/>2. BLAST<br/>3. UCSC tracks (manual)"]
+    
+    D -->|Step 1: BLAT| E["Map to Genome<br/>Returns top hits with coordinates"]
+    
+    E -->|Extract Best Hit| F["chr6:135,418,563-135,418,717<br/>99.4% identity<br/>155 bp match"]
+    
+    F -->|Generate UCSC Links| G["UCSC Browser Links<br/>for manual inspection:<br/>- Gene annotations<br/>- Conservation tracks<br/>- ChromHMM states<br/>- POL2/POL3 ChIP-seq"]
+    
+    D -->|Step 2: BLAST| H["Search RefSeq RNA<br/>database=refseq_rna<br/>organism=Homo sapiens"]
+    
+    H -->|Top Matches| I["RNA Database Hits:<br/>- Accession IDs<br/>- Identity %<br/>- E-values<br/>- Gene names"]
+    
+    G -->|Manual Review| J["User clicks links to:<br/>a. Check gene overlaps<br/>b. View conservation (Multiz)<br/>c. Check chromHMM state<br/>d. Check POL2/3 signals"]
+    
+    I -->|Cross-reference| K["Match with:<br/>RNAcentral, Rfam, GtRNAdb"]
+    
+    J -->|Answer Questions| L["Complete Analysis:<br/>a. Gene name & function<br/>b. Neighboring genes<br/>c. Conservation across species<br/>d. Chromatin state<br/>e. Transcription evidence<br/>f. Database matches"]
+    
+    K -->|Combine Results| L
+    
+    style A fill:#1565c0,stroke:#0d47a1,color:#ffffff,font-weight:bold
+    style B fill:#f57f17,stroke:#e65100,color:#ffffff,font-weight:bold
+    style C fill:#9c27b0,stroke:#6a1b9a,color:#ffffff,font-weight:bold
+    style D fill:#e91e63,stroke:#c2185b,color:#ffffff,font-weight:bold
+    style E fill:#00acc1,stroke:#00838f,color:#ffffff,font-weight:bold
+    style F fill:#4caf50,stroke:#2e7d32,color:#ffffff,font-weight:bold
+    style G fill:#ff9800,stroke:#e65100,color:#ffffff,font-weight:bold
+    style H fill:#00acc1,stroke:#00838f,color:#ffffff,font-weight:bold
+    style I fill:#8bc34a,stroke:#558b2f,color:#ffffff,font-weight:bold
+    style J fill:#ff9800,stroke:#e65100,color:#ffffff,font-weight:bold
+    style K fill:#8bc34a,stroke:#558b2f,color:#ffffff,font-weight:bold
+    style L fill:#4caf50,stroke:#2e7d32,color:#ffffff,font-weight:bold
 ```
 
 ## EMBOSS Tool Resolution
@@ -307,7 +500,48 @@ mindmap
   %%{init: { 'theme': 'base', 'primaryColor':'#42a5f5', 'primaryTextColor':'#fff', 'primaryBorderColor':'#1e88e5', 'secondBkgColor':'#66bb6a', 'tertiaryColor':'#ef5350', 'tertiaryTextColor':'#fff', 'textPlacement': 'center', 'mindmapBkg':'transparent', 'nodeBkg':'transparent'} }%%
 ```
 
-## Safety Filter Handling (NEW)
+## Safety Filter Handling & Ollama Fallback (NEW)
+
+```mermaid
+graph TB
+    A["User Query:<br/>'BLAST FBL mRNA excluding primates'"]
+    
+    A -->|Send to Cloud Mode| B["NLP Handler<br/>(Cloud Mode Active)"]
+    
+    B -->|Try Gemini First| C["Google Gemini 2.5 Flash"]
+    
+    C -->|Process Query| D{Safety<br/>Filter<br/>Triggered?}
+    
+    D -->|BLOCKED| E["⚠️ Safety filter detected:<br/>- Genetic sequences<br/>- Scientific terminology<br/>- Domain/taxonomy terms"]
+    
+    E -->|Auto-Fallback| F["Switch to Ollama<br/>(gemma3:4b)<br/>Cloud features remain active"]
+    
+    F -->|Reprocess Query| G["Ollama Processing<br/>No content restrictions"]
+    
+    D -->|APPROVED| H["Gemini Processing"]
+    
+    G -->|Parse Query| I["Extract Parameters:<br/>tool: blastn<br/>exclude_taxa: primates<br/>database: nt"]
+    
+    H -->|Parse Query| I
+    
+    I -->|Execute| J["BLAST Search<br/>with filters applied"]
+    
+    J -->|Results sorted by bit score| K["Display Results"]
+    
+    Note over F: Cloud features still work:<br/>- gene_query<br/>- genome_query<br/>- BLAST<br/>- GTEx<br/>- PubMed
+    
+    style A fill:#1565c0,stroke:#0d47a1,color:#ffffff,font-weight:bold
+    style B fill:#4caf50,stroke:#2e7d32,color:#ffffff,font-weight:bold
+    style C fill:#4caf50,stroke:#2e7d32,color:#ffffff,font-weight:bold
+    style D fill:#f57f17,stroke:#e65100,color:#ffffff,font-weight:bold
+    style E fill:#d32f2f,stroke:#b71c1c,color:#ffffff,font-weight:bold
+    style F fill:#9c27b0,stroke:#6a1b9a,color:#ffffff,font-weight:bold
+    style G fill:#9c27b0,stroke:#6a1b9a,color:#ffffff,font-weight:bold
+    style H fill:#4caf50,stroke:#2e7d32,color:#ffffff,font-weight:bold
+    style I fill:#00695c,stroke:#004d40,color:#ffffff,font-weight:bold
+    style J fill:#00acc1,stroke:#00838f,color:#ffffff,font-weight:bold
+    style K fill:#1565c0,stroke:#0d47a1,color:#ffffff,font-weight:bold
+```
 
 ```mermaid
 graph LR
@@ -378,16 +612,16 @@ graph TB
     style Ensembl fill:#ef5350,stroke:#c62828,color:#ffffff,font-weight:bold
 ```
 
-## Technology Stack
+## Technology Stack - Enhanced v3.0
 
 ```mermaid
 graph LR
     subgraph Frontend["Frontend"]
-        Streamlit["Streamlit 1.48.1"]
+        Streamlit["Streamlit 1.48.1<br/>6 Tabs + File Upload"]
     end
     
     subgraph Backend["Backend"]
-        Python["Python 3.12"]
+        Python["Python 3.9-3.12"]
         Bio["BioPython 1.85"]
     end
     
@@ -395,56 +629,70 @@ graph LR
         EMBOSS["EMBOSS 6.6.0<br/>258+ tools"]
     end
     
-    subgraph LLM["LLM Engine"]
-        Gemini["Google Gemini<br/>2.5 Flash Model"]
+    subgraph LLM["Dual LLM Engine"]
+        Gemini["Google Gemini<br/>2.5 Flash Model<br/>(Cloud Mode)"]
+        Ollama["Ollama gemma3:4b<br/>(Local Mode +<br/>Auto Fallback)"]
     end
     
     subgraph APIs["External APIs"]
         Ensembl["Ensembl REST API<br/>Gene/Transcript Data"]
-        UCSC["UCSC Genome Browser<br/>Genomic Regions & Tracks"]
-        NCBI["NCBI BLAST<br/>Sequence Homology"]
+        UCSC["UCSC Genome Browser<br/>Genomic Regions & Tracks<br/>BLAT Mapping"]
+        NCBI["NCBI BLAST<br/>Sequence Homology<br/>megablast support"]
         GTEx["GTEx Portal<br/>Gene Expression"]
+        PubMed["PubMed E-utilities<br/>Literature Search"]
     end
     
     subgraph Env["Environment"]
-        Conda["conda<br/>bioquery312 environment"]
+        Conda["conda<br/>bioquery environment"]
     end
     
-    subgraph NewFeatures["New Features v2.0"]
+    subgraph NewFeatures["New Features v3.0"]
         Logger["Command Logger<br/>Execution Tracking"]
-        SafetyWrapper["Safety Filter Wrapper<br/>Academic Context"]
+        SafetyFallback["Ollama Auto-Fallback<br/>on Gemini safety filter"]
+        NeighborFunc["Neighboring Genes<br/>Discovery Function"]
+        MysteryWorkflow["Mystery Sequence<br/>Multi-Step Analysis"]
+        BLATEnhanced["Enhanced BLAT Parser<br/>Direct UCSC Links"]
+        FASTAParser["Smart FASTA Parser<br/>Multi-sequence support"]
+        BlastFixes["BLAST Enhancements<br/>megablast + bit score sort"]
     end
     
     Streamlit -.->|runs on| Python
     Python -->|imports| Bio
     Python -->|subprocess calls| EMBOSS
-    Uses["uses"]
-    Python -->|HTTP requests| Uses
-    Uses -->|HTTP requests| Gemini
+    Python -->|HTTP requests| Gemini
+    Python -->|HTTP requests| Ollama
+    Gemini -.->|on block| SafetyFallback
+    SafetyFallback -.->|routes to| Ollama
     Python -->|HTTP requests| Ensembl
     Python -->|HTTP requests| UCSC
     Python -->|HTTP requests| NCBI
     Python -->|HTTP requests| GTEx
-    LLMLabel["interfaces<br/>with"]
-    Gemini -.-> LLMLabel
-    LLMLabel -.-> LLM
+    Python -->|HTTP requests| PubMed
     Conda -.->|manages| Python
     Python -->|integrates| Logger
-    Python -->|wraps queries| SafetyWrapper
-    SafetyWrapper -->|sanitizes| Gemini
+    Python -->|includes| NeighborFunc
+    Python -->|implements| MysteryWorkflow
+    Python -->|uses| BLATEnhanced
+    Python -->|uses| FASTAParser
+    Python -->|applies| BlastFixes
     
     style Streamlit fill:#f57f17,stroke:#e65100,color:#ffffff,font-weight:bold
     style Python fill:#1565c0,stroke:#0d47a1,color:#ffffff,font-weight:bold
     style Bio fill:#2e7d32,stroke:#1b5e20,color:#ffffff,font-weight:bold
     style EMBOSS fill:#2e7d32,stroke:#1b5e20,color:#ffffff,font-weight:bold
-    style Gemini fill:#ffc400,stroke:#f57f17,color:#000000,font-weight:bold
+    style Gemini fill:#4caf50,stroke:#2e7d32,color:#ffffff,font-weight:bold
+    style Ollama fill:#9c27b0,stroke:#6a1b9a,color:#ffffff,font-weight:bold
     style Ensembl fill:#c62828,stroke:#b71c1c,color:#ffffff,font-weight:bold
     style UCSC fill:#d32f2f,stroke:#b71c1c,color:#ffffff,font-weight:bold
     style NCBI fill:#e57100,stroke:#d84315,color:#ffffff,font-weight:bold
     style GTEx fill:#00838f,stroke:#006064,color:#ffffff,font-weight:bold
+    style PubMed fill:#8bc34a,stroke:#558b2f,color:#ffffff,font-weight:bold
     style Conda fill:#6a1b9a,stroke:#4a148c,color:#ffffff,font-weight:bold
     style Logger fill:#00acc1,stroke:#00838f,color:#ffffff,font-weight:bold
-    style SafetyWrapper fill:#43a047,stroke:#2e7d32,color:#ffffff,font-weight:bold
-    style Uses fill:#ffffff,stroke:#cccccc,color:#000000,font-weight:bold
-    style LLMLabel fill:#ffffff,stroke:#cccccc,color:#000000,font-weight:bold
+    style SafetyFallback fill:#ff9800,stroke:#e65100,color:#ffffff,font-weight:bold
+    style NeighborFunc fill:#1976d2,stroke:#0d47a1,color:#ffffff,font-weight:bold
+    style MysteryWorkflow fill:#e91e63,stroke:#c2185b,color:#ffffff,font-weight:bold
+    style BLATEnhanced fill:#e91e63,stroke:#c2185b,color:#ffffff,font-weight:bold
+    style FASTAParser fill:#f57f17,stroke:#e65100,color:#ffffff,font-weight:bold
+    style BlastFixes fill:#00acc1,stroke:#00838f,color:#ffffff,font-weight:bold
 ```

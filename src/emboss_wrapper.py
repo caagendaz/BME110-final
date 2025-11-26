@@ -1061,12 +1061,13 @@ Keep it conversational and friendly."""
             # Handle exclude_taxa (can combine with organism filter)
             if exclude_taxa and 'primate' in exclude_taxa.lower():
                 # Use NCBI taxonomy to exclude all primates (taxid:9443)
-                # Search in Mammalia (taxid:40674) but NOT in Primates (taxid:9443)
+                # If no organism filter yet, search all BUT exclude primates
                 if entrez_query:
                     entrez_query += " NOT txid9443[Organism:exp]"
                 else:
-                    entrez_query = "txid40674[Organism:exp] NOT txid9443[Organism:exp]"
-                print(f"Filtering: Mammals excluding primates (using NCBI taxonomy)")
+                    # No organism specified, just exclude primates from all results
+                    entrez_query = "NOT txid9443[Organism:exp]"
+                print(f"Filtering: Excluding primates (NCBI taxid:9443)")
             
             # Request more results when filtering to ensure good hits
             if entrez_query:
@@ -1083,6 +1084,11 @@ Keep it conversational and friendly."""
                 'expect': expect_threshold,
                 'format_type': 'XML'
             }
+            
+            # Use megablast for blastn (default, optimized for highly similar sequences)
+            if blast_type == 'blastn':
+                blast_params['megablast'] = True
+                print(f"Using megablast (default for blastn)")
             
             # Add optional parameters
             if entrez_query:
@@ -1122,23 +1128,21 @@ Keep it conversational and friendly."""
                     output.append(f"Number of Alignments: {len(record.alignments)}")
                 output.append("-" * 60)
                 
-                # Sort by identity percentage if we have taxonomy filtering
-                # (helps show the most similar species first)
+                # Sort by bit score (BLAST default) to match NCBI web interface
                 # IMPORTANT: Sort BEFORE taking top N results, not after!
                 if entrez_query and len(record.alignments) > 0:
-                    def get_identity_pct(alignment):
+                    def get_bit_score(alignment):
                         if alignment.hsps:
-                            hsp = alignment.hsps[0]
-                            return (100 * hsp.identities / hsp.align_length) if hsp.align_length > 0 else 0
+                            return alignment.hsps[0].score
                         return 0
                     
-                    # Sort ALL alignments by identity first
-                    all_alignments_sorted = sorted(record.alignments, key=get_identity_pct, reverse=True)
+                    # Sort ALL alignments by bit score (BLAST default)
+                    all_alignments_sorted = sorted(record.alignments, key=get_bit_score, reverse=True)
                     alignments_to_show = all_alignments_sorted[:max_results]
-                    output.append("Results sorted by identity percentage (highest first)")
+                    output.append("Results sorted by bit score (BLAST default)")
                     output.append("")
                 else:
-                    # No taxonomy filtering - use NCBI's default E-value sorting
+                    # No taxonomy filtering - use NCBI's default sorting (already by bit score)
                     alignments_to_show = record.alignments[:max_results]
                 
                 # Debug: Print organisms sorted by identity to console
@@ -1793,16 +1797,53 @@ Keep it conversational and friendly."""
             if response.status_code == 200:
                 result = response.text
                 
-                # Parse basic info from PSL format
+                # Parse PSL format to extract top hits with coordinates
                 lines = result.split('\n')
-                hits = [l for l in lines if l and not l.startswith('#') and not l.startswith('psLayout')]
+                data_lines = [l for l in lines if l and not l.startswith('#') and not l.startswith('psLayout') and '\t' in l]
+                
+                # Parse top hits (PSL format: matches, mismatches, ..., chrom, start, end, ...)
+                parsed_hits = []
+                for line in data_lines[:10]:  # Top 10 hits
+                    fields = line.split('\t')
+                    if len(fields) >= 21:
+                        try:
+                            matches = int(fields[0])
+                            mismatches = int(fields[1])
+                            chrom = fields[13]
+                            start = int(fields[15])
+                            end = int(fields[16])
+                            strand = fields[8]
+                            
+                            # Calculate identity
+                            identity = (matches / (matches + mismatches) * 100) if (matches + mismatches) > 0 else 0
+                            
+                            parsed_hits.append({
+                                'chrom': chrom,
+                                'start': start,
+                                'end': end,
+                                'strand': strand,
+                                'matches': matches,
+                                'identity': f"{identity:.1f}%",
+                                'ucsc_link': f"https://genome.ucsc.edu/cgi-bin/hgTracks?db={database}&position={chrom}:{start}-{end}"
+                            })
+                        except (ValueError, IndexError):
+                            continue
+                
+                # Build summary output
+                summary_lines = [f"BLAT search found {len(data_lines)} hits in {database}"]
+                if parsed_hits:
+                    summary_lines.append("\nTop hits:")
+                    for i, hit in enumerate(parsed_hits[:5], 1):
+                        summary_lines.append(f"{i}. {hit['chrom']}:{hit['start']}-{hit['end']} ({hit['identity']} identity, {hit['matches']} bp)")
+                        summary_lines.append(f"   View in UCSC Browser: {hit['ucsc_link']}")
                 
                 return {
                     'success': True,
                     'output': result,
-                    'num_hits': len(hits),
-                    'summary': f"BLAT search found {len(hits)} hits in {database}",
-                    'note': "BLAT is more sensitive for near-exact matches than BLAST"
+                    'num_hits': len(data_lines),
+                    'parsed_hits': parsed_hits,
+                    'summary': "\n".join(summary_lines),
+                    'note': "BLAT is more sensitive for near-exact matches than BLAST. Click UCSC Browser links to view genes, conservation, chromHMM, and ChIP-seq tracks."
                 }
             else:
                 return {
@@ -1893,9 +1934,9 @@ Keep it conversational and friendly."""
             print(f"Target gene {gene_name}: {chrom}:{target_start}-{target_end}")
             
             # Step 2: Query UCSC for all genes on this chromosome
-            # Get a wider region to find neighbors
-            region_start = max(1, target_start - 5000000)  # 5Mb upstream
-            region_end = target_end + 5000000  # 5Mb downstream
+            # Get a wider region to find neighbors (500kb each side)
+            region_start = max(1, target_start - 500000)  # 500kb upstream
+            region_end = target_end + 500000  # 500kb downstream
             
             ucsc_url = f"https://api.genome.ucsc.edu/getData/track"
             params = {
@@ -1911,6 +1952,10 @@ Keep it conversational and friendly."""
             
             if response.status_code != 200:
                 return f"Error: UCSC API returned status {response.status_code}"
+            
+            # Check if response has content
+            if not response.text:
+                return f"Error: UCSC API returned empty response for {chrom}:{region_start}-{region_end}"
             
             data = response.json()
             
@@ -1984,7 +2029,7 @@ Keep it conversational and friendly."""
                     output += f"   Distance: ~{gene['distance']:,} nucleotides\n"
                     output += f"   Position: {chrom}:{gene['start']:,}-{gene['end']:,}\n\n"
             else:
-                output += "No protein-coding genes found within 5Mb upstream\n\n"
+                output += "No protein-coding genes found within 500kb upstream\n\n"
             
             output += "Protein-Coding Genes to the RIGHT (downstream):\n"
             output += "-" * 70 + "\n"
@@ -1994,10 +2039,11 @@ Keep it conversational and friendly."""
                     output += f"   Distance: ~{gene['distance']:,} nucleotides\n"
                     output += f"   Position: {chrom}:{gene['start']:,}-{gene['end']:,}\n\n"
             else:
-                output += "No protein-coding genes found within 5Mb downstream\n\n"
+                output += "No protein-coding genes found within 500kb downstream\n\n"
             
             output += f"\nNote: Showing only protein-coding genes (light blue in UCSC Browser).\n"
             output += f"Distance is measured from gene boundaries (not transcription start sites).\n"
+            output += f"Search window: ±500kb from target gene.\n"
             
             return output
             

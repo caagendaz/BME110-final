@@ -145,6 +145,26 @@ MULTI-STEP WORKFLOWS (gene_query → BLAST):
   Step 2: blastn (for mRNA) or blastp (for protein) with "sequence": "USE_PREVIOUS_RESULT"
 - The system will automatically fetch the correct sequence type from the gene
 
+COMPLEX GENOMICS ANALYSIS WORKFLOWS:
+- For comprehensive sequence characterization, CHAIN multiple tools in steps:
+  Example: "Characterize this mystery sequence [ATGC...] using hg19"
+  Step 1: blat with sequence=[ATGC...], genome=hg19 → get genomic location
+  Step 2: ucsc_table with location from Step 1, track="ncbiRefSeq" → check gene overlaps
+  Step 3: find_neighboring_genes (if gene found in Step 2) → get flanking genes
+  Step 4: blast with sequence, database="refseq_rna" → search RNA databases
+  
+- For conservation/chromHMM/ChIP-seq: provide UCSC Browser links, these require manual visualization
+  Format: "View at https://genome.ucsc.edu/cgi-bin/hgTracks?db={genome}&position={chr}:{start}-{end}"
+
+- For sequence → genomic analysis workflow:
+  1. Use blat to map sequence to genome location (chr:start-end)
+  2. Use ucsc_table to query tracks at that location (genes, conservation, etc.)
+  3. Use gene_query if specific gene is identified
+  4. Use blast for database similarity searches
+  
+- Available UCSC tracks: ncbiRefSeq, knownGene, tRNAs, cons100way, wgEncodeBroadHmmGm12878HMM
+- For conservation/chromHMM/ChIP-seq not in REST API: provide UCSC Browser link instructions
+
 GENE SYMBOL SUPPORT (cloud only):
 - If user mentions a GENE NAME/SYMBOL (like TP53, BRCA1, ALKBH1): use gene_name parameter with appropriate tool
 - For gene structure questions: use gene_query
@@ -157,12 +177,17 @@ Decision logic:
 - If "isoelectric point", "pI", "charge" -> use iep (NOT info)
 - If "codon usage", "codon frequency" -> use cusp
 - If raw DNA/RNA/protein sequences (ATGCCC, MKLA...) -> use appropriate EMBOSS tool with sequence parameter
+- IMPORTANT: If user provides ONLY a DNA sequence without specifying an operation (especially long sequences >100bp), AND asks general questions like "what is this", "analyze", "characterize", or provides NO specific instruction -> assume they want genomic characterization with multi-step: blat + ucsc_table + blast
 """
         
         if self.mode == 'cloud':
             base_prompt += """- If GENE NAME/SYMBOL mentioned -> use gene_query or tool with gene_name parameter
 - If chromosome/genomic position -> use genome_query
 - If "BLAST", "search", "similar", "homologous" -> use blast/blastn/blastp
+- If "characterize", "analyze", "mystery sequence", "what is this sequence", "identify sequence" -> create multi-step workflow:
+  Step 1: blat to map to genome
+  Step 2: ucsc_table to check gene overlaps
+  Step 3: blast against refseq_rna for database matches
 """
         
         base_prompt += """- Otherwise use appropriate EMBOSS tool
@@ -179,6 +204,12 @@ Examples:
             base_prompt += """- "Find gene info for TP53" -> gene_query with gene_name: TP53
 - "Translate BRCA1" -> translate tool with gene_name: BRCA1
 - "BLAST this sequence: ATGCGATCG" -> blast tool with sequence: ATGCGATCG
+- "Characterize this sequence [ATGC...]" or "What is this sequence?" -> multi-step:
+  {"steps": [
+    {"tool": "blat", "parameters": {"sequence": "[ATGC...]", "database": "hg19"}},
+    {"tool": "ucsc_table", "parameters": {"genome": "hg19", "track": "ncbiRefSeq", "chrom": "USE_RESULT", "start": "USE_RESULT", "end": "USE_RESULT"}},
+    {"tool": "blast", "parameters": {"sequence": "[ATGC...]", "blast_type": "blastn", "database": "refseq_rna", "max_results": 5}}
+  ], "explanation": "Map sequence to genome, check gene overlaps, and search RNA databases"}
 """
         
         return base_prompt
