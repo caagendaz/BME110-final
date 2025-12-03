@@ -529,22 +529,21 @@ def main():
                     references_file = any(keyword in user_query.lower() for keyword in file_keywords)
                     has_uploaded = 'uploaded_sequences' in st.session_state
                     
-                    # If we extracted a sequence from the query, send to NLP with the sequence
+                    # If we extracted a sequence from the query, send to NLP WITHOUT sequence data for speed
                     if extracted_sequence and not references_file:
                         st.markdown('<div class="tool-box">', unsafe_allow_html=True)
                         
                         # Handle both single sequence (string) and two sequences (dict)
                         if isinstance(extracted_sequence, dict):
                             st.success(f"✓ Detected two sequences: seq1 ({len(extracted_sequence['seq1'])} bp), seq2 ({len(extracted_sequence['seq2'])} bp)")
-                            nlp_query = f"{cleaned_query} [two sequences provided: {len(extracted_sequence['seq1'])} bp and {len(extracted_sequence['seq2'])} bp]"
                         else:
                             st.success(f"✓ Detected sequence in query ({len(extracted_sequence)} bp)")
-                            nlp_query = f"{cleaned_query} [sequence provided: {len(extracted_sequence)} bp]"
                         
                         st.markdown('</div>', unsafe_allow_html=True)
                         
-                        # Parse with NLP to get intelligent tool chaining
-                        success, result = nlp.parse_user_query(nlp_query)
+                        # Parse with NLP using ONLY the cleaned query (no sequence data)
+                        # This is MUCH faster - sequences get injected AFTER tool selection
+                        success, result = nlp.parse_user_query(cleaned_query)
                         
                         if success:
                             # Inject the extracted sequence(s) into parameters
