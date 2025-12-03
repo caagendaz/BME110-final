@@ -1354,7 +1354,7 @@ def main():
                         
                         comparison_tool = st.selectbox(
                             "Comparison tool:",
-                            ["dotplot", "align", "None - batch process each file separately"],
+                            ["dotplot", "align", "water", "None - batch process each file separately"],
                             help="Choose a tool to compare sequences from the two files"
                         )
                         
