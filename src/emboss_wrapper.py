@@ -32,6 +32,10 @@ class EMBOSSWrapper:
             'reverse': 'revseq',
             'orf': 'getorf',
             'align': 'needle',
+            'water': 'water',
+            'waterman': 'water',
+            'local_align': 'water',
+            'smith_waterman': 'water',
             'pattern': 'fuzznuc',
             'restriction': 'restrict',
             'shuffle': 'shuffleseq',
@@ -133,6 +137,7 @@ class EMBOSSWrapper:
             'reverse': 'Reverse and complement a DNA sequence',
             'orf': 'Find open reading frames in a sequence',
             'align': 'Global sequence alignment using Needleman-Wunsch',
+            'water': 'Local sequence alignment using Smith-Waterman',
             'pattern': 'Search for patterns in sequences',
             'restriction': 'Find restriction enzyme sites',
             'shuffle': 'Shuffle a sequence',
@@ -176,8 +181,72 @@ class EMBOSSWrapper:
         # Cache for available EMBOSS tools
         self.available_emboss_tools = None
         
+        # Cache for AI-resolved tool names
+        self.tool_resolution_cache = {}
+        
         # Verify EMBOSS installation
         self.check_emboss()
+    
+    def _resolve_tool_with_ai(self, tool_name: str) -> str:
+        """Use Gemini API to resolve unknown tool names to EMBOSS tool names
+        
+        Args:
+            tool_name: User's requested tool name
+            
+        Returns:
+            str: EMBOSS tool name, or original name if not found
+        """
+        # Check cache first
+        if tool_name in self.tool_resolution_cache:
+            return self.tool_resolution_cache[tool_name]
+        
+        try:
+            import google.generativeai as genai
+            import os
+            
+            # Configure Gemini
+            api_key = os.getenv('GEMINI_API_KEY')
+            if not api_key:
+                return tool_name  # Can't resolve without API key
+            
+            genai.configure(api_key=api_key)
+            model = genai.GenerativeModel('gemini-2.0-flash-exp')
+            
+            prompt = f"""You are an EMBOSS bioinformatics tool expert. 
+
+The user requested: "{tool_name}"
+
+What is the exact EMBOSS command-line tool name for this? 
+
+Common EMBOSS tools include:
+- needle (global alignment)
+- water (local alignment) 
+- stretcher (global alignment for longer sequences)
+- matcher (local alignment, shows all matches)
+- dotmatcher (dot plot)
+- transeq (translate DNA to protein)
+- revseq (reverse complement)
+- getorf (find ORFs)
+- restrict (restriction sites)
+- pepstats (protein statistics)
+- seqret (sequence format conversion)
+- trimest, trimseq (sequence trimming)
+
+Respond with ONLY the exact EMBOSS tool name, nothing else. If you don't know, respond with "UNKNOWN"."""
+
+            response = model.generate_content(prompt)
+            resolved = response.text.strip().lower()
+            
+            # Validate response
+            if resolved and resolved != "unknown" and len(resolved) < 30 and resolved.isalnum():
+                self.tool_resolution_cache[tool_name] = resolved
+                return resolved
+            else:
+                return tool_name
+                
+        except Exception as e:
+            print(f"AI tool resolution failed: {e}")
+            return tool_name
     
     def check_emboss(self) -> bool:
         """Verify EMBOSS tools are available
@@ -1305,6 +1374,13 @@ Keep it conversational and friendly."""
         """
         # Map natural language name to EMBOSS command if needed
         emboss_name = self.tool_map.get(tool_name.lower(), tool_name.lower())
+        
+        # If tool not in map, try asking Gemini for the correct EMBOSS tool name
+        if emboss_name == tool_name.lower() and emboss_name not in self.tool_map.values():
+            resolved_tool = self._resolve_tool_with_ai(tool_name)
+            if resolved_tool and resolved_tool != tool_name:
+                print(f"AI resolved '{tool_name}' → '{resolved_tool}'")
+                emboss_name = resolved_tool
         
         # If a gene_name is provided but no sequence, try to resolve the sequence first
         if ('gene_name' in kwargs or 'gene' in kwargs) and 'sequence' not in kwargs:

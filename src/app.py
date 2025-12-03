@@ -162,25 +162,62 @@ def parse_fasta(fasta_content):
     current_header = None
     current_seq = []
     
-    for line in fasta_content.split('\n'):
+    # Handle different line endings and strip BOM if present
+    fasta_content = fasta_content.replace('\r\n', '\n').replace('\r', '\n')
+    if fasta_content.startswith('\ufeff'):
+        fasta_content = fasta_content[1:]
+    
+    lines = fasta_content.split('\n')
+    
+    for line_num, line in enumerate(lines, 1):
         line = line.strip()
         if not line:
             continue
-            
-        if line.startswith('>'):
+        
+        # Check for FASTA header (supports both > and ; as some formats use semicolon)
+        if line.startswith('>') or (line.startswith(';') and current_header is None):
             # Save previous sequence if exists
             if current_header is not None:
-                sequences.append((current_header, ''.join(current_seq)))
+                seq_string = ''.join(current_seq)
+                if seq_string:  # Only add if sequence is not empty
+                    sequences.append((current_header, seq_string))
+                else:
+                    st.warning(f"Empty sequence for header: {current_header}")
+            
             # Start new sequence
-            current_header = line[1:]  # Remove '>'
+            current_header = line[1:].strip()  # Remove '>' or ';'
             current_seq = []
+        elif line.startswith(';'):
+            # Comment line in FASTA (some formats use semicolons for comments)
+            continue
         else:
-            # Add to current sequence
-            current_seq.append(line)
+            # Sequence line - validate it contains valid characters
+            if current_header is None:
+                # Found sequence data before any header - might not be FASTA format
+                st.warning(f"Line {line_num}: Found sequence data before FASTA header (line starts with: '{line[:20]}...')")
+                continue
+            
+            # Remove spaces and numbers (some FASTA files have line numbers)
+            clean_line = ''.join(c for c in line if c.isalpha() or c == '-' or c == '*')
+            if clean_line:
+                current_seq.append(clean_line)
     
     # Don't forget the last sequence
     if current_header is not None:
-        sequences.append((current_header, ''.join(current_seq)))
+        seq_string = ''.join(current_seq)
+        if seq_string:
+            sequences.append((current_header, seq_string))
+        else:
+            st.warning(f"Empty sequence for header: {current_header}")
+    
+    # If no sequences found, provide helpful error
+    if not sequences and fasta_content.strip():
+        st.error("❌ No valid FASTA sequences found. FASTA files must:\n"
+                 "- Start headers with '>' character\n"
+                 "- Have at least one header line\n"
+                 "- Contain sequence data after headers")
+        st.text("First 200 characters of file:")
+        st.code(fasta_content[:200])
     
     return sequences
 
@@ -1302,13 +1339,18 @@ def main():
                             st.markdown("---")
                     
                     # Special handling for 2 files (comparison mode)
-                    if num_files == 2:
+                    if num_files == 2 and len(file_sequence_map) == 2:
                         st.markdown("### 🔀 Two-File Comparison Mode")
                         st.info("With 2 files, you can compare sequences between them!")
                         
                         file_names = list(file_sequence_map.keys())
-                        file1_seqs = file_sequence_map[file_names[0]]
-                        file2_seqs = file_sequence_map[file_names[1]]
+                        if len(file_names) >= 2:
+                            file1_seqs = file_sequence_map[file_names[0]]
+                            file2_seqs = file_sequence_map[file_names[1]]
+                        else:
+                            st.warning("One or more files contain no valid sequences.")
+                            file1_seqs = []
+                            file2_seqs = []
                         
                         comparison_tool = st.selectbox(
                             "Comparison tool:",
