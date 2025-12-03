@@ -7,10 +7,11 @@ A Streamlit web application that uses natural language AI (Google Gemini) to con
 ## Features
 
 - 🤖 **Natural Language Interface**: Ask questions in plain English, get bioinformatics analysis
-- 🧬 **258+ EMBOSS Tools**: Access entire EMBOSS suite with AI-powered dynamic discovery (NEW!)
-- 🎯 **Smart Tool Resolution**: AI automatically finds the right tool even if not explicitly mapped (NEW!)
-- 🚀 **Optimized Performance**: Sequences processed separately from NLP for 10x faster queries (NEW!)
-- 📊 **Enhanced Graphics**: SVG output for crisp, scalable dotplots and visualizations (NEW!)
+- 🧬 **258+ EMBOSS Tools**: Access entire EMBOSS suite with AI-powered dynamic discovery ⚡NEW!
+- 🎯 **Smart Tool Resolution**: AI automatically finds the right tool even if not explicitly mapped ⚡NEW!
+- 🏠 **Local or Cloud AI**: Choose between Gemini (cloud) or Ollama (fully local) for tool resolution ⚡NEW!
+- 🚀 **Optimized Performance**: Sequences processed separately from NLP for 10x faster queries ⚡NEW!
+- 📊 **Enhanced Graphics**: SVG output for crisp, scalable dotplots and visualizations ⚡NEW!
 - 🧪 **Gene-Based Queries**: Query genes by symbol (e.g., "translate ALKBH1") with Ensembl API integration
 - 🔬 **BLAST Integration**: Run NCBI BLAST searches on sequences or genes remotely via BioPython
 - 🧬 **BLAT Integration**: Search sequences against genomes using UCSC BLAT for near-exact matches
@@ -18,10 +19,10 @@ A Streamlit web application that uses natural language AI (Google Gemini) to con
 - 🧬 **GTEx Integration**: Query gene expression across 54 human tissues from GTEx Portal
 - 📊 **Multi-Step Workflows**: Chain operations together (e.g., "find gene ALKBH1 then BLAST it")
 - 🧬 **DNA/RNA Conversion**: Convert between DNA and RNA sequences (T↔U)
-- 🧪 **18 Biopython Tools**: Advanced analysis including phylogenetic trees, motif finding, primer design (NEW!)
+- 🧪 **18 Biopython Tools**: Advanced analysis including phylogenetic trees, motif finding, primer design ⚡NEW!
 - 📋 **Command Logging**: Detailed execution logs for debugging and documentation
 - 🛡️ **Enhanced Safety Filters**: Improved handling of scientific terminology in AI queries
-- 🎯 **AI-Powered**: Google Gemini 2.0 Flash for intelligent tool selection and parameter extraction
+- 🎯 **AI-Powered**: Google Gemini 2.0 Flash OR Ollama (llama3.2, qwen2.5, mistral) ⚡NEW!
 - 🌐 **Web Interface**: Beautiful Streamlit UI with 6 integrated tabs
 - 💾 **Results Export**: Download analysis results and execution logs as text files
 
@@ -46,7 +47,9 @@ pip install biopython google-generativeai requests
 
 **Note**: Installing conda-forge packages before bioconda avoids dependency conflicts.
 
-### 2. Get Google Gemini API Key
+### 2. Choose Your AI Backend
+
+#### Option A: Cloud Mode (Gemini) - Recommended for Best Accuracy
 
 1. Go to https://ai.google.dev/
 2. Click "Get API Key" in Google AI Studio
@@ -71,6 +74,29 @@ cp .env.example .env
 # Edit .env and add your key
 GOOGLE_API_KEY=your_api_key_here
 ```
+
+#### Option B: Local Mode (Ollama) - Fully Private, No API Keys ⚡NEW!
+
+For complete privacy with no internet required for AI queries:
+
+1. **Install Ollama**: Download from https://ollama.ai
+2. **Pull a model** (one-time):
+   ```bash
+   ollama pull llama3.2      # Recommended: 2GB, fast, accurate
+   # OR
+   ollama pull qwen2.5       # Alternative: good for technical tasks
+   # OR  
+   ollama pull mistral       # Alternative: 4GB, very capable
+   ```
+3. **Ollama runs automatically** on `localhost:11434`
+4. **Select "Local Mode"** in the app sidebar
+
+**Ollama Mode Features:**
+- ✅ Complete privacy - all AI processing stays on your machine
+- ✅ No API keys required
+- ✅ No internet needed for tool resolution
+- ✅ Works with llama3.2, llama3.1, qwen2.5, mistral, and more
+- ⚠️ Slightly less accurate than Gemini for complex queries
 
 ### 3. Run the App
 
