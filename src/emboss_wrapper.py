@@ -1687,15 +1687,16 @@ Keep it conversational and friendly."""
             return self._run_generic_emboss_tool(emboss_name, **kwargs)
     
     def _run_generic_emboss_tool(self, tool_name: str, **kwargs) -> str:
-        """Generic runner for any EMBOSS tool that accepts sequence input
+        """Generic runner for any EMBOSS tool
         
-        Supports both single-sequence and two-sequence tools:
+        Supports three types of tools:
         - Single sequence: provide 'sequence' parameter
-        - Two sequences: provide 'seq1' and 'seq2' parameters
+        - Two sequences: provide 'seq1' and 'seq2' parameters  
+        - No sequences: tools like wossname, showdb (neither sequence parameter provided)
         
         Args:
-            tool_name: EMBOSS tool name (e.g., 'iep', 'charge', 'dotmatcher')
-            **kwargs: Parameters including 'sequence' OR ('seq1' and 'seq2')
+            tool_name: EMBOSS tool name (e.g., 'iep', 'charge', 'dotmatcher', 'wossname')
+            **kwargs: Parameters including optional 'sequence' OR ('seq1' and 'seq2')
         
         Returns:
             str: Tool output or error message
@@ -1705,14 +1706,42 @@ Keep it conversational and friendly."""
         seq2 = kwargs.get('seq2', '')
         sequence = kwargs.get('sequence', '')
         
-        # Determine if single or two-sequence tool
+        # Determine tool type: two-sequence, single-sequence, or no-sequence
         is_two_sequence = bool(seq1 and seq2)
-        
-        if not is_two_sequence and not sequence:
-            return f"Error: No sequence provided for tool '{tool_name}'. Provide 'sequence' for single-sequence tools or 'seq1' and 'seq2' for two-sequence tools."
+        has_sequence = bool(sequence)
+        is_no_sequence = not (is_two_sequence or has_sequence)
         
         try:
-            if is_two_sequence:
+            if is_no_sequence:
+                # No-sequence tool (wossname, showdb, restover, etc.)
+                # These tools don't need sequence input files
+                output_file = tempfile.NamedTemporaryFile(suffix=f'_{tool_name}_output.txt', delete=False).name
+                
+                # Build command with just the tool and parameters
+                cmd = [tool_name, '-outfile', output_file]
+                
+                # Add any additional parameters from kwargs
+                skip_keys = {'sequence', 'seq1', 'seq2', '_gene_name', 'gene_name', 'gene'}
+                for key, value in kwargs.items():
+                    if key not in skip_keys and value is not None:
+                        param_name = f'-{key.replace("_", "")}'
+                        cmd.extend([param_name, str(value)])
+                
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                
+                if result.returncode == 0 and os.path.exists(output_file):
+                    with open(output_file, 'r') as f:
+                        output = f.read()
+                    try:
+                        os.remove(output_file)
+                    except:
+                        pass
+                    return output
+                else:
+                    error_msg = result.stderr if result.stderr else "Tool execution failed"
+                    return f"Error running {tool_name}: {error_msg}"
+            
+            elif is_two_sequence:
                 # Two-sequence tool (dotplot, needle, water, etc.)
                 with tempfile.NamedTemporaryFile(mode='w', suffix='.fasta', delete=False) as f1:
                     f1.write(f">seq1\n{seq1}\n")
