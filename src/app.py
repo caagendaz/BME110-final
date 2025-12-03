@@ -1380,12 +1380,23 @@ def main():
                                 st.markdown("#### Comparison Results:")
                                 st.write(f"**Sequence 1:** {seq1_header}")
                                 st.write(f"**Sequence 2:** {seq2_header}")
+                                st.write(f"**Tool:** {comparison_tool}")
                                 
                                 try:
-                                    result = emboss.run_tool(comparison_tool, seq1=seq1, seq2=seq2)
+                                    with st.spinner(f"Running {comparison_tool}..."):
+                                        result = emboss.run_tool(comparison_tool, seq1=seq1, seq2=seq2)
+                                    
+                                    # Debug output
+                                    if result.startswith("IMAGE_FILE:"):
+                                        st.success("✓ Image generated!")
+                                    else:
+                                        st.info(f"Result type: {type(result)}, starts with: {result[:50] if result else 'empty'}")
+                                    
                                     display_result(result)
                                 except Exception as e:
                                     st.error(f"Error: {str(e)}")
+                                    import traceback
+                                    st.code(traceback.format_exc())
                             
                             st.markdown("---")
                     

@@ -1743,17 +1743,47 @@ Keep it conversational and friendly."""
                 
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
                 
-                if result.returncode == 0 and os.path.exists(output_file):
-                    if is_graphics_tool:
-                        # Return special marker with image path for Streamlit to display
-                        # Don't delete the file yet - Streamlit needs to read it
+                if is_graphics_tool:
+                    # Graphics tools like dotmatcher append .1.png to the filename
+                    # Check for the actual generated file
+                    actual_output_file = None
+                    
+                    # Try common patterns
+                    possible_files = [
+                        output_file,  # exact name
+                        f"{output_file}.1.png",  # dotmatcher pattern
+                        output_file.replace('.png', '.1.png')  # another pattern
+                    ]
+                    
+                    for pfile in possible_files:
+                        if os.path.exists(pfile) and os.path.getsize(pfile) > 0:
+                            actual_output_file = pfile
+                            break
+                    
+                    if actual_output_file:
                         # Cleanup temp sequence files only
                         try:
                             os.remove(file1)
                             os.remove(file2)
                         except:
                             pass
-                        return f"IMAGE_FILE:{output_file}"
+                        return f"IMAGE_FILE:{actual_output_file}"
+                    else:
+                        error_msg = result.stderr if result.stderr else f"Graphics file not generated. Checked: {possible_files}"
+                        return f"Error running {tool_name}: {error_msg}"
+                
+                elif result.returncode == 0 and os.path.exists(output_file):
+                    # Text output tools
+                    with open(output_file, 'r') as f:
+                        output = f.read()
+                    # Cleanup
+                    try:
+                        os.remove(file1)
+                        os.remove(file2)
+                        os.remove(output_file)
+                    except:
+                        pass
+                    return output
                     else:
                         with open(output_file, 'r') as f:
                             output = f.read()
