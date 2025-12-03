@@ -1784,17 +1784,6 @@ Keep it conversational and friendly."""
                     except:
                         pass
                     return output
-                    else:
-                        with open(output_file, 'r') as f:
-                            output = f.read()
-                        # Cleanup
-                        try:
-                            os.remove(file1)
-                            os.remove(file2)
-                            os.remove(output_file)
-                        except:
-                            pass
-                        return output
                 else:
                     error_msg = result.stderr if result.stderr else "Tool execution failed"
                     return f"Error running {tool_name}: {error_msg}"
