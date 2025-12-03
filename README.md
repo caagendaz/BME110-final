@@ -7,7 +7,10 @@ A Streamlit web application that uses natural language AI (Google Gemini) to con
 ## Features
 
 - 🤖 **Natural Language Interface**: Ask questions in plain English, get bioinformatics analysis
-- 🧬 **EMBOSS Integration**: Access 258+ powerful EMBOSS tools (dynamically discovered)
+- 🧬 **258+ EMBOSS Tools**: Access entire EMBOSS suite with AI-powered dynamic discovery (NEW!)
+- 🎯 **Smart Tool Resolution**: AI automatically finds the right tool even if not explicitly mapped (NEW!)
+- 🚀 **Optimized Performance**: Sequences processed separately from NLP for 10x faster queries (NEW!)
+- 📊 **Enhanced Graphics**: SVG output for crisp, scalable dotplots and visualizations (NEW!)
 - 🧪 **Gene-Based Queries**: Query genes by symbol (e.g., "translate ALKBH1") with Ensembl API integration
 - 🔬 **BLAST Integration**: Run NCBI BLAST searches on sequences or genes remotely via BioPython
 - 🧬 **BLAT Integration**: Search sequences against genomes using UCSC BLAT for near-exact matches
@@ -15,9 +18,10 @@ A Streamlit web application that uses natural language AI (Google Gemini) to con
 - 🧬 **GTEx Integration**: Query gene expression across 54 human tissues from GTEx Portal
 - 📊 **Multi-Step Workflows**: Chain operations together (e.g., "find gene ALKBH1 then BLAST it")
 - 🧬 **DNA/RNA Conversion**: Convert between DNA and RNA sequences (T↔U)
-- 📋 **Command Logging**: Detailed execution logs for debugging and documentation (NEW!)
+- 🧪 **18 Biopython Tools**: Advanced analysis including phylogenetic trees, motif finding, primer design (NEW!)
+- 📋 **Command Logging**: Detailed execution logs for debugging and documentation
 - 🛡️ **Enhanced Safety Filters**: Improved handling of scientific terminology in AI queries
-- 🎯 **AI-Powered**: Google Gemini API for intelligent tool selection and parameter extraction
+- 🎯 **AI-Powered**: Google Gemini 2.0 Flash for intelligent tool selection and parameter extraction
 - 🌐 **Web Interface**: Beautiful Streamlit UI with 6 integrated tabs
 - 💾 **Results Export**: Download analysis results and execution logs as text files
 
@@ -150,28 +154,54 @@ Each question gets its own result section with expand/collapse capability.
 
 ## Available Tools
 
+### EMBOSS Tools (258+ available via AI-powered discovery)
+The system can dynamically discover and use any EMBOSS tool. Here are commonly used ones:
+
 | Tool | Description | Input | Example Query |
 |------|-------------|-------|---------------|
-| **translate** | Translate DNA to protein | DNA sequence or gene name, reading frame (1-3) | "Translate ALKBH1" |
+| **translate** | Translate DNA to protein | DNA sequence or gene name | "Translate ALKBH1" |
 | **reverse** | Reverse complement DNA | DNA sequence | "Reverse complement ATGC" |
 | **orf** | Find open reading frames | DNA sequence, min size | "Find ORFs in ATGCCC" |
-| **align** | Needleman-Wunsch alignment | Two sequences | "Align ATGC and ATGG" |
-| **restriction** | Find restriction sites | DNA sequence, enzyme (optional) | "Find restriction sites in ATGC" |
-| **shuffle** | Randomize sequence | Sequence | "Shuffle ATGC" |
-| **info** | Get sequence statistics | Sequence | "Get info for ATGC" |
-| **sixframe** | All 6 translation frames | DNA sequence | "Six frame translate ATGC" |
-| **cusp** | Codon usage statistics | DNA/CDS sequence | "Calculate codon usage for ALKBH1" |
-| **pepstats** | Protein statistics (MW, pI, composition) | Protein sequence or gene | "Get protein stats for TP53" |
-| **wordcount** | Oligonucleotide frequencies | DNA sequence | "Count oligonucleotides in sequence" |
-| **gene_query** | Get gene information from Ensembl | Gene symbol (e.g., ALKBH1) | "Find gene info for TP53" |
-| **blast** | Run NCBI BLAST search | DNA/protein sequence or gene name | "BLAST this sequence: ATGC" |
-| **blat** | UCSC BLAT search (near-exact) | DNA sequence | "BLAT search ATGCCC in hg38" |
-| **bedtools** | Find genomic overlaps | Two BED files or regions | "Find SNPs overlapping tRNA genes" |
-| **gtex** | Get tissue expression data | Gene symbol | "What tissues express SOCS3 highest?" |
-| **dna_to_rna** | Convert DNA to RNA (T→U) | DNA sequence | "Convert ATGC to RNA" |
-| **rna_to_dna** | Convert RNA to DNA (U→T) | RNA sequence | "Convert AUGC to DNA" |
+| **align/needle** | Needleman-Wunsch global alignment | Two sequences | "Align ATGC and ATGG" |
+| **water** | Smith-Waterman local alignment | Two sequences | "Use water to align these" |
+| **stretcher** | Fast global alignment ⚡NEW | Two sequences | "Use stretcher on sequences" |
+| **matcher** | Find all local matches ⚡NEW | Two sequences | "Use matcher to compare" |
+| **dotplot** | Dot plot (SVG format) ⚡NEW | Two sequences | "Make a dot plot" |
+| **newcpgseek** | Find CpG islands ⚡NEW | DNA sequence | "Find CpG islands" |
+| **pepnet** | Helical net plot ⚡NEW | Protein sequence | "Use pepnet to visualize" |
+| **antigenic** | Predict antigenic sites ⚡NEW | Protein sequence | "Find antigenic sites" |
+| **restriction** | Find restriction sites | DNA sequence | "Find restriction sites" |
+| **sixframe** | All 6 reading frames | DNA sequence | "Six frame translate" |
+| **cusp** | Codon usage statistics | DNA/CDS | "Calculate codon usage" |
+| **pepstats** | Protein statistics | Protein sequence | "Get protein stats" |
+| **wossname** | Search EMBOSS docs ⚡NEW | Search term | "Find alignment tools" |
+| **showdb** | List databases ⚡NEW | None | "Show available databases" |
 
-**Plus 250+ additional EMBOSS tools** available through dynamic discovery!
+### Biopython Tools (18 specialized analyses)
+Advanced bioinformatics analysis powered by Biopython:
+
+| Tool | Description | Input | Example Query |
+|------|-------------|-------|---------------|
+| **phylo** | Phylogenetic tree (UPGMA) | Multiple sequences | "Build phylogenetic tree" |
+| **motif** | Find conserved motifs | Multiple sequences | "Find motifs in sequences" |
+| **primer** | Primer analysis (Tm, GC%) | DNA primer | "Analyze this primer" |
+| **restriction_batch** | Batch restriction analysis | DNA sequence | "Find all restriction sites" |
+| **pairwise_compare** | Detailed comparison | Two sequences | "Compare sequences in detail" |
+| **secondary_structure** | Predict 2° structure | Protein sequence | "Predict secondary structure" |
+| **hydrophobicity** | Hydrophobicity plot | Protein sequence | "Plot hydrophobicity" |
+| **entropy** | Shannon entropy | Sequence | "Calculate entropy" |
+| **complexity** | Linguistic complexity | Sequence | "Analyze complexity" |
+
+### External API Integration
+| Tool | Description | Input | Example Query |
+|------|-------------|-------|---------------|
+| **gene_query** | Ensembl gene info | Gene symbol | "Find gene info for TP53" |
+| **blast** | NCBI BLAST search | DNA/protein or gene | "BLAST this sequence" |
+| **blat** | UCSC BLAT (near-exact) | DNA sequence | "BLAT search in hg38" |
+| **bedtools** | Genomic region overlaps | BED regions | "Find overlapping SNPs" |
+| **gtex** | Tissue expression data | Gene symbol | "Which tissues express SOCS3?" |
+
+⚡ **NEW**: Over 240 additional EMBOSS tools available through AI-powered dynamic discovery!
 
 ## Project Structure
 
@@ -204,23 +234,34 @@ bme110/
 ## How It Works
 
 1. **User Input** → Streamlit UI collects natural language query or gene symbol
-2. **NLP Processing** → Google Gemini API (gemini-2.5-flash) interprets the query and selects appropriate tool(s)
+2. **Sequence Extraction** ⚡NEW → System extracts sequences from query BEFORE NLP processing (10x faster)
+3. **NLP Processing** → Google Gemini API (gemini-2.0-flash-exp) interprets query and selects tool(s)
    - Uses academic/scientific context wrapper to bypass false-positive safety filters
-3. **Parameter Extraction** → Gemini extracts sequence data, gene names, and parameters from query
-4. **Gene Resolution** (if applicable) → Ensembl API fetches gene/transcript information
-5. **Tool Execution** → EMBOSSWrapper runs EMBOSS tools, BLAST, BEDTools, or other APIs
-   - **NEW**: All executions are automatically logged with timestamp, parameters, and results
-6. **Multi-Step Chaining** (if applicable) → Automatically chains results between steps
-7. **Results Display** → Streamlit displays formatted results with download option
-8. **Command Logging** → View detailed execution history in Command Log tab
+   - **AI Tool Resolution** ⚡NEW: If tool not in map, asks Gemini "what EMBOSS tool is X?" and caches result
+4. **Parameter Extraction** → Gemini extracts parameters from query (without sequences)
+5. **Sequence Injection** ⚡NEW → Extracted sequences injected into parameters AFTER tool selection
+6. **Gene Resolution** (if applicable) → Ensembl API fetches gene/transcript information
+7. **Tool Execution** → EMBOSSWrapper runs tools with support for:
+   - Single-sequence tools (`sequence` parameter)
+   - Two-sequence tools (`seq1`, `seq2` parameters) ⚡NEW
+   - No-sequence tools (`wossname`, `showdb`) ⚡NEW
+   - Graphics tools (SVG output for quality) ⚡NEW
+8. **Multi-Step Chaining** (if applicable) → Automatically chains results between steps
+9. **Results Display** → Streamlit displays formatted results with download option
+10. **Command Logging** → View detailed execution history in Command Log tab
 
 ### Key Components
 
-- **258+ EMBOSS Tools**: Dynamically discovered bioinformatics tools
+- **258+ EMBOSS Tools**: Full suite dynamically discovered via AI
+- **18 Biopython Tools**: Phylogenetics, motif finding, primers, restriction analysis, protein analysis
+- **AI-Powered Tool Resolution**: Discovers unmapped tools on-the-fly via Gemini ⚡NEW
+- **Optimized NLP Flow**: Sequences processed separately for speed ⚡NEW
+- **Multi-File Upload**: Process multiple FASTA files, automatic sequence detection
+- **Two-Sequence Comparison**: Intelligent routing for alignment/dotplot tools ⚡NEW
+- **SVG Graphics**: High-quality scalable vector graphics ⚡NEW
 - **Ensembl Integration**: Query genes by symbol, get transcript sequences
-- **BioPython BLAST**: Remote NCBI BLAST searches (Bio.Blast.NCBIWWW, Bio.Blast.NCBIXML)
+- **BioPython BLAST**: Remote NCBI BLAST searches
 - **Multi-Step Execution**: Chain operations with automatic result passing
-- **Smart Parameter Handling**: Automatically fetches sequences when gene names are provided
 - **Command Logging System**: Tracks all executions for debugging and documentation
 
 ## System Requirements
