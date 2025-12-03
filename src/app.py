@@ -144,7 +144,7 @@ def initialize_tools(mode='cloud'):
     Args:
         mode: 'cloud' for Gemini API or 'local' for Ollama
     """
-    emboss = EMBOSSWrapper()
+    emboss = EMBOSSWrapper(ai_mode=mode)
     nlp = NLPHandler(mode=mode)
     return emboss, nlp
 

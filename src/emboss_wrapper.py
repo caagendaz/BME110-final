@@ -18,13 +18,26 @@ import traceback
 class EMBOSSWrapper:
     """Wrapper for common EMBOSS bioinformatics tools"""
     
-    def __init__(self):
-        """Initialize the EMBOSS wrapper and verify installation"""
+    def __init__(self, ai_mode: str = "cloud", ai_model: str = None):
+        """Initialize the EMBOSS wrapper and verify installation
+        
+        Args:
+            ai_mode: 'cloud' for Gemini API or 'local' for Ollama (default: 'cloud')
+            ai_model: Model name to use (default: gemini-2.0-flash-exp for cloud, llama3.2 for local)
+        """
         # Set NCBI Entrez email for downloads
         Entrez.email = "user@bioquery.local"
         
         # Initialize command log
         self.command_log = []
+        
+        # Configure AI mode for tool resolution
+        self.ai_mode = ai_mode
+        if ai_model:
+            self.ai_model = ai_model
+        else:
+            self.ai_model = "gemini-2.0-flash-exp" if ai_mode == "cloud" else "llama3.2:latest"
+        self.ollama_url = "http://localhost:11434" if ai_mode == "local" else None
         
         # Map natural language to EMBOSS commands (shortcuts for common operations)
         self.tool_map = {
@@ -188,7 +201,7 @@ class EMBOSSWrapper:
         self.check_emboss()
     
     def _resolve_tool_with_ai(self, tool_name: str) -> str:
-        """Use Gemini API to resolve unknown tool names to EMBOSS tool names
+        """Use AI (Gemini or Ollama) to resolve unknown tool names to EMBOSS tool names
         
         Args:
             tool_name: User's requested tool name
@@ -201,17 +214,6 @@ class EMBOSSWrapper:
             return self.tool_resolution_cache[tool_name]
         
         try:
-            import google.generativeai as genai
-            import os
-            
-            # Configure Gemini
-            api_key = os.getenv('GEMINI_API_KEY')
-            if not api_key:
-                return tool_name  # Can't resolve without API key
-            
-            genai.configure(api_key=api_key)
-            model = genai.GenerativeModel('gemini-2.0-flash-exp')
-            
             prompt = f"""You are an EMBOSS bioinformatics tool expert. 
 
 The user requested: "{tool_name}"
@@ -234,18 +236,48 @@ Common EMBOSS tools include:
 
 Respond with ONLY the exact EMBOSS tool name, nothing else. If you don't know, respond with "UNKNOWN"."""
 
-            response = model.generate_content(prompt)
-            resolved = response.text.strip().lower()
+            if self.ai_mode == "cloud":
+                # Use Gemini API
+                import google.generativeai as genai
+                import os
+                
+                api_key = os.getenv('GEMINI_API_KEY')
+                if not api_key:
+                    return tool_name  # Can't resolve without API key
+                
+                genai.configure(api_key=api_key)
+                model = genai.GenerativeModel(self.ai_model)
+                response = model.generate_content(prompt)
+                resolved = response.text.strip().lower()
+            else:
+                # Use Ollama (local)
+                response = requests.post(
+                    f"{self.ollama_url}/api/generate",
+                    json={
+                        "model": self.ai_model,
+                        "prompt": prompt,
+                        "stream": False
+                    },
+                    timeout=30
+                )
+                
+                if response.status_code != 200:
+                    print(f"Ollama request failed: {response.status_code}")
+                    return tool_name
+                
+                result = response.json()
+                resolved = result.get("response", "").strip().lower()
             
             # Validate response
             if resolved and resolved != "unknown" and len(resolved) < 30 and resolved.isalnum():
                 self.tool_resolution_cache[tool_name] = resolved
+                print(f"🤖 AI resolved '{tool_name}' → '{resolved}' (using {self.ai_mode} mode)")
                 return resolved
             else:
                 return tool_name
                 
         except Exception as e:
-            print(f"AI tool resolution failed: {e}")
+            print(f"AI tool resolution failed ({self.ai_mode} mode): {e}")
             return tool_name
     
     def check_emboss(self) -> bool:
