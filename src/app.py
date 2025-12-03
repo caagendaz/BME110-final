@@ -551,25 +551,21 @@ def main():
                                 # Multi-step workflow
                                 for step in result['steps']:
                                     if isinstance(extracted_sequence, dict):
-                                        # Two sequences - inject both
-                                        if 'seq1' in step.get('parameters', {}) or 'seq2' in step.get('parameters', {}):
-                                            step['parameters']['seq1'] = extracted_sequence['seq1']
-                                            step['parameters']['seq2'] = extracted_sequence['seq2']
+                                        # Two sequences - always inject (overwrite placeholders)
+                                        step['parameters']['seq1'] = extracted_sequence['seq1']
+                                        step['parameters']['seq2'] = extracted_sequence['seq2']
                                     else:
-                                        # Single sequence
-                                        if 'sequence' in step.get('parameters', {}):
-                                            step['parameters']['sequence'] = extracted_sequence
+                                        # Single sequence - always inject (overwrite placeholder)
+                                        step['parameters']['sequence'] = extracted_sequence
                             elif 'parameters' in result:
                                 # Single step
                                 if isinstance(extracted_sequence, dict):
-                                    # Two sequences - inject both
-                                    if 'seq1' in result['parameters'] or 'seq2' in result['parameters']:
-                                        result['parameters']['seq1'] = extracted_sequence['seq1']
-                                        result['parameters']['seq2'] = extracted_sequence['seq2']
+                                    # Two sequences - always inject (overwrite placeholders)
+                                    result['parameters']['seq1'] = extracted_sequence['seq1']
+                                    result['parameters']['seq2'] = extracted_sequence['seq2']
                                 else:
-                                    # Single sequence
-                                    if 'sequence' in result['parameters']:
-                                        result['parameters']['sequence'] = extracted_sequence
+                                    # Single sequence - always inject (overwrite placeholder)
+                                    result['parameters']['sequence'] = extracted_sequence
                         else:
                             # NLP failed, fall back to simple keyword detection
                             query_lower = cleaned_query.lower()

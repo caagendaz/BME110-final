@@ -87,6 +87,7 @@ EMBOSS tools (use 'sequence' for raw DNA/protein sequences):
 - reverse: Reverse complement DNA. Needs "sequence"
 - orf: Find open reading frames. Needs "sequence" and optional "min_size"
 - align: Global alignment of two sequences (Needleman-Wunsch). Needs "seq1" and "seq2". USE THIS for "global align", "needle", "full alignment"
+- stretcher: Fast global alignment for longer sequences. Needs "seq1" and "seq2". USE THIS for "stretcher", "fast global align"
 - water: Local alignment of two sequences (Smith-Waterman). Needs "seq1" and "seq2". USE THIS for "local align", "waterman", "smith-waterman", "best local match"
 - dotplot: Dot plot comparison of two sequences (visual similarity). Needs "seq1" and "seq2". USE THIS for "dot plot", "dotplot", "compare visually"
 - pattern: Search for patterns. Needs "sequence" and optional "pattern"

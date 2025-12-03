@@ -1,0 +1,22 @@
+
+  You can now view your Streamlit app in your browser.
+
+  Local URL: http://localhost:8501
+  Network URL: http://192.168.133.111:8501
+
+/home/cagns/miniconda3/envs/bioquery/lib/python3.9/site-packages/google/api_core/_python_version_support.py:252: FutureWarning: You are using a Python version (3.9.23) past its end of life. Google will update google.api_core with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade to the latest Python version, or at least Python 3.10, and then update google.api_core.
+  warnings.warn(message, FutureWarning)
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1764741758.272118  424704 fork_posix.cc:71] Other threads are currently calling into gRPC, skipping fork() handlers
+/tmp/tmpi7_o1byd: line 3: 423834 Killed                  streamlit run src/app.py --server.port 8501
+ERROR conda.cli.main_run:execute(127): `conda run streamlit run src/app.py --server.port 8501` failed. (See above for error)
+
+  You can now view your Streamlit app in your browser.
+
+  Local URL: http://localhost:8501
+  Network URL: http://192.168.133.111:8501
+
+/home/cagns/miniconda3/envs/bioquery/lib/python3.9/site-packages/google/api_core/_python_version_support.py:252: FutureWarning: You are using a Python version (3.9.23) past its end of life. Google will update google.api_core with critical bug fixes on a best-effort basis, but not with any other fixes or features. Please upgrade to the latest Python version, or at least Python 3.10, and then update google.api_core.
+  warnings.warn(message, FutureWarning)
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+I0000 00:00:1764742486.811561  425867 fork_posix.cc:71] Other threads are currently calling into gRPC, skipping fork() handlers
