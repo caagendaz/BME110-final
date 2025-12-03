@@ -20,3 +20,5 @@ ERROR conda.cli.main_run:execute(127): `conda run streamlit run src/app.py --ser
   warnings.warn(message, FutureWarning)
 WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
 I0000 00:00:1764742486.811561  425867 fork_posix.cc:71] Other threads are currently calling into gRPC, skipping fork() handlers
+/tmp/tmpldh4p3ks: line 3: 425326 Killed                  streamlit run src/app.py --server.port 8501
+ERROR conda.cli.main_run:execute(127): `conda run streamlit run src/app.py --server.port 8501` failed. (See above for error)

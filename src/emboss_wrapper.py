@@ -1727,8 +1727,15 @@ Keep it conversational and friendly."""
                 
                 if is_graphics_tool:
                     # Graphics tools use -graph instead of -outfile
-                    output_file = tempfile.NamedTemporaryFile(suffix='.png', delete=False).name
-                    cmd = [tool_name, '-asequence', file1, '-bsequence', file2, '-graph', 'png', '-goutfile', output_file]
+                    # Use SVG for scalable vector graphics (much better quality than PNG)
+                    output_file = tempfile.NamedTemporaryFile(suffix='.svg', delete=False).name
+                    cmd = [
+                        tool_name, 
+                        '-asequence', file1, 
+                        '-bsequence', file2, 
+                        '-graph', 'svg',
+                        '-goutfile', output_file
+                    ]
                 else:
                     # Text output tools use -outfile
                     output_file = tempfile.NamedTemporaryFile(suffix=f'_{tool_name}_output.txt', delete=False).name
@@ -1744,15 +1751,17 @@ Keep it conversational and friendly."""
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
                 
                 if is_graphics_tool:
-                    # Graphics tools like dotmatcher append .1.png to the filename
+                    # Graphics tools like dotmatcher append .1.svg (or .1.png) to the filename
                     # Check for the actual generated file
                     actual_output_file = None
                     
-                    # Try common patterns
+                    # Try common patterns for SVG output
                     possible_files = [
                         output_file,  # exact name
-                        f"{output_file}.1.png",  # dotmatcher pattern
-                        output_file.replace('.png', '.1.png')  # another pattern
+                        f"{output_file}.1.svg",  # dotmatcher pattern with SVG
+                        output_file.replace('.svg', '.1.svg'),  # another pattern
+                        f"{output_file}.1.png",  # fallback to PNG pattern
+                        output_file.replace('.svg', '.1.png')  # PNG fallback
                     ]
                     
                     for pfile in possible_files:
