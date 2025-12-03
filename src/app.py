@@ -9,6 +9,60 @@ from nlp_handler import NLPHandler
 import traceback
 import os
 from datetime import datetime
+from PIL import Image
+
+
+def display_result(result):
+    """Display result, handling both text and image outputs"""
+    try:
+        if isinstance(result, str) and result.startswith("IMAGE_FILE:"):
+            # Extract image path
+            image_path = result.replace("IMAGE_FILE:", "")
+            
+            try:
+                # Read the image file
+                with open(image_path, "rb") as file:
+                    image_data = file.read()
+                
+                st.success("✓ Dot plot image generated successfully!")
+                
+                # Try to display the image
+                try:
+                    from PIL import Image
+                    image = Image.open(image_path)
+                    st.image(image, caption="Dot Plot", use_container_width=True)
+                except:
+                    # If PIL fails, just show the download button
+                    st.info("Image generated. Use the download button below to view it.")
+                
+                # Provide download button
+                st.download_button(
+                    label="📥 Download Dot Plot Image",
+                    data=image_data,
+                    file_name="dotplot.png",
+                    mime="image/png"
+                )
+                
+                # Clean up temp file after reading
+                try:
+                    os.remove(image_path)
+                except:
+                    pass
+                    
+            except Exception as e:
+                st.error(f"Error handling image: {str(e)}")
+                st.text(f"Image path: {image_path}")
+        else:
+            # Regular text output - ensure it's a string
+            if not isinstance(result, str):
+                result = str(result)
+            st.code(result, language="text")
+    except RecursionError:
+        st.error("Display error: maximum recursion depth exceeded")
+        st.text(str(result)[:500])  # Show first 500 chars as fallback
+    except Exception as e:
+        st.error(f"Error displaying result: {str(e)}")
+        st.text(str(result)[:500])
 
 
 # Page configuration
@@ -305,8 +359,32 @@ def main():
                     extracted_sequence = None
                     cleaned_query = user_query
                     
+                    # Check for PDB structure queries first (bypass NLP entirely)
+                    import re
+                    pdb_match = re.search(r'\b(pdb|structure|protein structure)\s+([0-9][A-Za-z0-9]{3})\b', user_query, re.IGNORECASE)
+                    if pdb_match:
+                        pdb_id = pdb_match.group(2).upper()
+                        st.markdown('<div class="tool-box">', unsafe_allow_html=True)
+                        st.success(f"✓ Detected PDB structure query: {pdb_id}")
+                        st.markdown('</div>', unsafe_allow_html=True)
+                        
+                        st.info("**Action:** Get protein structure information from PDB")
+                        st.write(f"**PDB ID:** {pdb_id}")
+                        
+                        try:
+                            result = emboss.run_tool('protein_structure', pdb_id=pdb_id)
+                            st.markdown("#### Results:")
+                            display_result(result)
+                            
+                            # Mark as handled
+                            success = True
+                            result = {'handled': True}
+                        except Exception as e:
+                            st.error(f"Error: {str(e)}")
+                            success = False
+                    
                     # Look for FASTA format (>header followed by sequence)
-                    if '>' in user_query:
+                    elif '>' in user_query:
                         import re
                         # Extract all FASTA sequences
                         fasta_pattern = r'>([^\n]+)\n([ATCGNatcgn\s]+?)(?=>|\Z)'
@@ -317,33 +395,78 @@ def main():
                             first_gt = user_query.index('>')
                             text_before = user_query[:first_gt].strip()
                             
-                            # Extract key context words from the text
-                            context_keywords = ['characterize', 'analyze', 'identify', 'what is', 'mystery', 
-                                              'sequence', 'genome browser', 'hg19', 'hg38', 'functional genomics']
-                            found_keywords = [kw for kw in context_keywords if kw.lower() in text_before.lower()]
+                            # PRIORITY: Check for two-sequence tool keywords first (dotplot, align, compare)
+                            two_seq_keywords = ['dot plot', 'dotplot', 'align', 'compare', 'similarity', 'match']
+                            has_two_seq_request = any(kw.lower() in text_before.lower() for kw in two_seq_keywords)
+                            
+                            # Check if we have multiple sequences
+                            has_multiple_seqs = len(matches) >= 2
                             
                             # Build cleaned query from context
-                            if found_keywords:
-                                cleaned_query = f"Characterize this sequence using hg19"
+                            if has_two_seq_request and has_multiple_seqs:
+                                # User wants to compare/align/dotplot two sequences
+                                cleaned_query = text_before if text_before else "make a dot plot of these two sequences"
                             else:
-                                cleaned_query = text_before if text_before else "analyze this sequence"
+                                # Extract key context words for characterization
+                                context_keywords = ['characterize', 'analyze', 'identify', 'what is', 'mystery', 
+                                                  'genome browser', 'hg19', 'hg38', 'functional genomics']
+                                found_keywords = [kw for kw in context_keywords if kw.lower() in text_before.lower()]
+                                
+                                if found_keywords:
+                                    cleaned_query = f"Characterize this sequence using hg19"
+                                else:
+                                    cleaned_query = text_before if text_before else "analyze this sequence"
                             
-                            # Take first sequence for now (we can process multiple later)
-                            if matches:
-                                header, seq = matches[0]
-                                extracted_sequence = seq.replace('\n', '').replace(' ', '').strip().upper()
+                            # Extract sequences based on context
+                            if has_two_seq_request and has_multiple_seqs:
+                                # Extract both sequences for two-sequence tools
+                                header1, seq1 = matches[0]
+                                header2, seq2 = matches[1]
+                                extracted_sequence = {
+                                    'seq1': seq1.replace('\n', '').replace(' ', '').strip().upper(),
+                                    'seq2': seq2.replace('\n', '').replace(' ', '').strip().upper()
+                                }
+                            else:
+                                # Take first sequence for single-sequence tools
+                                if matches:
+                                    header, seq = matches[0]
+                                    extracted_sequence = seq.replace('\n', '').replace(' ', '').strip().upper()
                     
                     # Look for long continuous sequences without FASTA format
                     if not extracted_sequence:
                         import re
-                        # Find sequences that are at least 30 characters of valid nucleotides
-                        seq_match = re.search(r'\b([ATCGNatcgn]{30,})\b', user_query)
-                        if seq_match:
-                            extracted_sequence = seq_match.group(1).upper()
-                            # Remove the sequence from the query
-                            cleaned_query = user_query.replace(seq_match.group(0), '').strip()
+                        
+                        # Check if user wants dotplot/align with two sequences
+                        two_seq_keywords = ['dot plot', 'dotplot', 'align', 'compare', 'similarity', 'match']
+                        has_two_seq_request = any(kw.lower() in user_query.lower() for kw in two_seq_keywords)
+                        
+                        # Look for multiple sequence blocks (lines with gene IDs followed by sequences)
+                        # Pattern: gene identifier line followed by nucleotide sequences
+                        sequence_blocks = re.findall(r'(?:^|\n)([A-Z0-9]+(?:\.[0-9]+)?\s*\([^)]+\)[^\n]*)\n([ATCGNatcgn\s]+?)(?=\n[A-Z0-9]+(?:\.[0-9]+)?\s*\(|\Z)', 
+                                                     user_query, re.MULTILINE | re.IGNORECASE)
+                        
+                        if has_two_seq_request and len(sequence_blocks) >= 2:
+                            # Extract two sequences for dotplot/align
+                            header1, seq1 = sequence_blocks[0]
+                            header2, seq2 = sequence_blocks[1]
+                            extracted_sequence = {
+                                'seq1': ''.join(seq1.split()).upper(),
+                                'seq2': ''.join(seq2.split()).upper()
+                            }
+                            # Extract instruction text before sequences
+                            first_seq_pos = user_query.index(sequence_blocks[0][0])
+                            cleaned_query = user_query[:first_seq_pos].strip()
                             if not cleaned_query:
-                                cleaned_query = "characterize this sequence using hg19"
+                                cleaned_query = "make a dot plot of these two sequences"
+                        else:
+                            # Single sequence - find first long sequence
+                            seq_match = re.search(r'\b([ATCGNatcgn]{30,})\b', user_query)
+                            if seq_match:
+                                extracted_sequence = seq_match.group(1).upper()
+                                # Remove the sequence from the query
+                                cleaned_query = user_query.replace(seq_match.group(0), '').strip()
+                                if not cleaned_query:
+                                    cleaned_query = "characterize this sequence using hg19"
                     
                     # Check if query references uploaded file
                     file_keywords = ['file', 'uploaded', 'fasta', 'sequences in', 'all sequences']
@@ -353,27 +476,45 @@ def main():
                     # If we extracted a sequence from the query, send to NLP with the sequence
                     if extracted_sequence and not references_file:
                         st.markdown('<div class="tool-box">', unsafe_allow_html=True)
-                        st.success(f"✓ Detected sequence in query ({len(extracted_sequence)} bp)")
-                        st.markdown('</div>', unsafe_allow_html=True)
                         
-                        # Build query for NLP: use cleaned query with explicit sequence parameter
-                        # This allows NLP to intelligently decide what to do
-                        nlp_query = f"{cleaned_query} [sequence provided: {len(extracted_sequence)} bp]"
+                        # Handle both single sequence (string) and two sequences (dict)
+                        if isinstance(extracted_sequence, dict):
+                            st.success(f"✓ Detected two sequences: seq1 ({len(extracted_sequence['seq1'])} bp), seq2 ({len(extracted_sequence['seq2'])} bp)")
+                            nlp_query = f"{cleaned_query} [two sequences provided: {len(extracted_sequence['seq1'])} bp and {len(extracted_sequence['seq2'])} bp]"
+                        else:
+                            st.success(f"✓ Detected sequence in query ({len(extracted_sequence)} bp)")
+                            nlp_query = f"{cleaned_query} [sequence provided: {len(extracted_sequence)} bp]"
+                        
+                        st.markdown('</div>', unsafe_allow_html=True)
                         
                         # Parse with NLP to get intelligent tool chaining
                         success, result = nlp.parse_user_query(nlp_query)
                         
                         if success:
-                            # Inject the extracted sequence into parameters
+                            # Inject the extracted sequence(s) into parameters
                             if 'steps' in result:
                                 # Multi-step workflow
                                 for step in result['steps']:
-                                    if 'sequence' in step.get('parameters', {}):
-                                        step['parameters']['sequence'] = extracted_sequence
+                                    if isinstance(extracted_sequence, dict):
+                                        # Two sequences - inject both
+                                        if 'seq1' in step.get('parameters', {}) or 'seq2' in step.get('parameters', {}):
+                                            step['parameters']['seq1'] = extracted_sequence['seq1']
+                                            step['parameters']['seq2'] = extracted_sequence['seq2']
+                                    else:
+                                        # Single sequence
+                                        if 'sequence' in step.get('parameters', {}):
+                                            step['parameters']['sequence'] = extracted_sequence
                             elif 'parameters' in result:
                                 # Single step
-                                if 'sequence' in result['parameters']:
-                                    result['parameters']['sequence'] = extracted_sequence
+                                if isinstance(extracted_sequence, dict):
+                                    # Two sequences - inject both
+                                    if 'seq1' in result['parameters'] or 'seq2' in result['parameters']:
+                                        result['parameters']['seq1'] = extracted_sequence['seq1']
+                                        result['parameters']['seq2'] = extracted_sequence['seq2']
+                                else:
+                                    # Single sequence
+                                    if 'sequence' in result['parameters']:
+                                        result['parameters']['sequence'] = extracted_sequence
                         else:
                             # NLP failed, fall back to simple keyword detection
                             query_lower = cleaned_query.lower()
@@ -382,6 +523,11 @@ def main():
                             
                             # Define keyword mappings to tools
                             tool_keywords = [
+                                # Two-sequence tools (check first)
+                                ('dot plot', 'dotplot', {}, 'Create dot plot comparison'),
+                                ('dotplot', 'dotplot', {}, 'Create dot plot comparison'),
+                                ('align', 'align', {}, 'Align two sequences'),
+                                # Single-sequence tools
                                 ('gc content', 'gc_content', {}, 'Calculate GC content'),
                                 ('reverse complement', 'reverse', {}, 'Reverse complement'),
                                 ('isoelectric point', 'iep', {}, 'Calculate isoelectric point'),
@@ -419,13 +565,20 @@ def main():
                                     st.write(f"**Tool:** {op_info['tool']}")
                                     
                                     try:
-                                        # Execute tool with the extracted sequence
+                                        # Execute tool with the extracted sequence(s)
                                         params = op_info['parameters'].copy()
-                                        params['sequence'] = extracted_sequence
+                                        
+                                        # Check if this is a two-sequence tool
+                                        if op_info['tool'] in ['dotplot', 'align'] and isinstance(extracted_sequence, dict):
+                                            params['seq1'] = extracted_sequence['seq1']
+                                            params['seq2'] = extracted_sequence['seq2']
+                                        else:
+                                            params['sequence'] = extracted_sequence
+                                        
                                         result = emboss.run_tool(op_info['tool'], **params)
                                         
                                         st.markdown("#### Results:")
-                                        st.code(result, language="text")
+                                        display_result(result)
                                         
                                     except Exception as e:
                                         st.error(f"Error: {str(e)}")
@@ -528,7 +681,7 @@ def main():
                                 st.markdown("#### Results:")
                                 for item in all_results:
                                     with st.expander(f"📄 {item['header']}", expanded=(len(all_results) == 1)):
-                                        st.text(item['result'])
+                                        display_result(item['result'])
                                 
                                 if len(detected_operations) > 1:
                                     st.markdown("---")

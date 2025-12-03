@@ -80,7 +80,15 @@ class EMBOSSWrapper:
             'neighboring_genes': 'find_neighboring_genes',
             'flanking_genes': 'find_neighboring_genes',
             'genes_near': 'find_neighboring_genes',
-            'neighbor_genes': 'find_neighboring_genes'
+            'neighbor_genes': 'find_neighboring_genes',
+            # Biopython-powered tools
+            'msa': 'multiple_sequence_alignment',
+            'multiple_align': 'multiple_sequence_alignment',
+            'pdb': 'protein_structure',
+            'structure': 'protein_structure',
+            'protein_structure': 'protein_structure',
+            'biopython_mw': 'molecular_weight_biopython',
+            'protparam': 'molecular_weight_biopython'
         }
         
         # Tool descriptions for user guidance
@@ -108,7 +116,11 @@ class EMBOSSWrapper:
             'bedtools': 'Find overlaps between genomic regions (BED files)',
             'blat': 'Search sequences against genome (UCSC BLAT)',
             'ucsc_gene': 'Get gene information from UCSC Genome Browser',
-            'gtex': 'Get gene expression data across tissues (GTEx)'
+            'gtex': 'Get gene expression data across tissues (GTEx)',
+            # Biopython tools
+            'msa': 'Multiple sequence alignment (Biopython)',
+            'pdb': 'Get protein 3D structure information from PDB',
+            'protparam': 'Advanced protein analysis (Biopython ProtParam)'
         }
         
         # Cache for available EMBOSS tools
@@ -1222,6 +1234,10 @@ Keep it conversational and friendly."""
             result = self._run_tool_internal(tool_name, **kwargs)
             self._log_command(tool_name, kwargs, result)
             return result
+        except RecursionError:
+            error_msg = f"Error: Maximum recursion depth exceeded while running {tool_name}"
+            self._log_command(tool_name, kwargs, "", error=error_msg)
+            return error_msg
         except Exception as e:
             error_msg = f"Error: {str(e)}"
             self._log_command(tool_name, kwargs, "", error=error_msg)
@@ -1318,8 +1334,6 @@ Keep it conversational and friendly."""
             return self.get_sequence_info(kwargs.get('sequence', ''))
         elif emboss_name == 'restrict':
             return self.find_restriction_sites(kwargs.get('sequence', ''), kwargs.get('enzyme', None))
-        elif emboss_name == 'needle':
-            return self.align_sequences(kwargs.get('seq1', ''), kwargs.get('seq2', ''))
         elif emboss_name == 'sixpack':
             return self.get_six_frame_translation(kwargs.get('sequence', ''))
         elif emboss_name == 'gc_content':
@@ -1456,6 +1470,21 @@ Keep it conversational and friendly."""
                 genome=kwargs.get('genome', 'hg38'),
                 track=kwargs.get('track', 'knownGene')
             )
+        # Biopython-powered tools
+        elif emboss_name == 'multiple_sequence_alignment':
+            sequences = kwargs.get('sequences', [])
+            if not sequences:
+                return "Error: Provide 'sequences' as list of (name, seq) tuples"
+            return self.multiple_sequence_alignment(sequences)
+        elif emboss_name == 'protein_structure':
+            pdb_id = kwargs.get('pdb_id', kwargs.get('pdb', ''))
+            if not pdb_id:
+                return "Error: Provide 'pdb_id' (e.g., '1ABC')"
+            return self.get_protein_structure_info(pdb_id)
+        elif emboss_name == 'molecular_weight_biopython':
+            sequence = kwargs.get('sequence', '')
+            seq_type = kwargs.get('seq_type', 'protein')
+            return self.calculate_molecular_weight_biopython(sequence, seq_type)
         else:
             # Generic EMBOSS tool fallback
             return self._run_generic_emboss_tool(emboss_name, **kwargs)
@@ -1463,63 +1492,133 @@ Keep it conversational and friendly."""
     def _run_generic_emboss_tool(self, tool_name: str, **kwargs) -> str:
         """Generic runner for any EMBOSS tool that accepts sequence input
         
+        Supports both single-sequence and two-sequence tools:
+        - Single sequence: provide 'sequence' parameter
+        - Two sequences: provide 'seq1' and 'seq2' parameters
+        
         Args:
-            tool_name: EMBOSS tool name (e.g., 'iep', 'charge', 'mwfilter')
-            **kwargs: Parameters including 'sequence'
+            tool_name: EMBOSS tool name (e.g., 'iep', 'charge', 'dotmatcher')
+            **kwargs: Parameters including 'sequence' OR ('seq1' and 'seq2')
         
         Returns:
             str: Tool output or error message
         """
+        # Check if this is a two-sequence tool (seq1 and seq2 provided)
+        seq1 = kwargs.get('seq1', '')
+        seq2 = kwargs.get('seq2', '')
         sequence = kwargs.get('sequence', '')
-        if not sequence:
-            return f"Error: No sequence provided for tool '{tool_name}'"
+        
+        # Determine if single or two-sequence tool
+        is_two_sequence = bool(seq1 and seq2)
+        
+        if not is_two_sequence and not sequence:
+            return f"Error: No sequence provided for tool '{tool_name}'. Provide 'sequence' for single-sequence tools or 'seq1' and 'seq2' for two-sequence tools."
         
         try:
-            with tempfile.NamedTemporaryFile(mode='w', suffix='.fasta', delete=False) as f:
-                f.write(f">input_seq\n{sequence}\n")
-                input_file = f.name
-            
-            output_file = input_file.replace('.fasta', f'_{tool_name}_output.txt')
-            
-            # Build command with the tool and basic parameters
-            cmd = [tool_name, '-sequence', input_file, '-outfile', output_file]
-            
-            # Add any additional parameters from kwargs (excluding internal/non-EMBOSS keys)
-            skip_keys = {'sequence', '_gene_name', 'gene_name', 'gene'}
-            for key, value in kwargs.items():
-                if key not in skip_keys and value is not None:
-                    # Convert kwargs to EMBOSS format (-param value)
-                    param_name = f'-{key.replace("_", "")}'
-                    cmd.extend([param_name, str(value)])
-            
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-            
-            if result.returncode == 0 and os.path.exists(output_file):
-                with open(output_file, 'r') as f:
-                    output = f.read()
+            if is_two_sequence:
+                # Two-sequence tool (dotplot, needle, water, etc.)
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.fasta', delete=False) as f1:
+                    f1.write(f">seq1\n{seq1}\n")
+                    file1 = f1.name
                 
-                # Add gene context if available
-                if '_gene_name' in kwargs:
-                    gene = kwargs['_gene_name']
-                    output = f"Gene {gene} - {tool_name.upper()}:\n\n{output}"
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.fasta', delete=False) as f2:
+                    f2.write(f">seq2\n{seq2}\n")
+                    file2 = f2.name
                 
-                # Cleanup
-                try:
-                    os.remove(input_file)
-                    os.remove(output_file)
-                except:
-                    pass
+                # Check if this is a graphics tool (dotmatcher, dotpath, dottup, polydot)
+                is_graphics_tool = tool_name in ['dotmatcher', 'dotpath', 'dottup', 'polydot']
                 
-                return output
+                if is_graphics_tool:
+                    # Graphics tools use -graph instead of -outfile
+                    output_file = tempfile.NamedTemporaryFile(suffix='.png', delete=False).name
+                    cmd = [tool_name, '-asequence', file1, '-bsequence', file2, '-graph', 'png', '-goutfile', output_file]
+                else:
+                    # Text output tools use -outfile
+                    output_file = tempfile.NamedTemporaryFile(suffix=f'_{tool_name}_output.txt', delete=False).name
+                    cmd = [tool_name, '-asequence', file1, '-bsequence', file2, '-outfile', output_file]
+                
+                # Add any additional parameters
+                skip_keys = {'seq1', 'seq2', '_gene_name', 'gene_name', 'gene'}
+                for key, value in kwargs.items():
+                    if key not in skip_keys and value is not None:
+                        param_name = f'-{key.replace("_", "")}'
+                        cmd.extend([param_name, str(value)])
+                
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                
+                if result.returncode == 0 and os.path.exists(output_file):
+                    if is_graphics_tool:
+                        # Return special marker with image path for Streamlit to display
+                        # Don't delete the file yet - Streamlit needs to read it
+                        # Cleanup temp sequence files only
+                        try:
+                            os.remove(file1)
+                            os.remove(file2)
+                        except:
+                            pass
+                        return f"IMAGE_FILE:{output_file}"
+                    else:
+                        with open(output_file, 'r') as f:
+                            output = f.read()
+                        # Cleanup
+                        try:
+                            os.remove(file1)
+                            os.remove(file2)
+                            os.remove(output_file)
+                        except:
+                            pass
+                        return output
+                else:
+                    error_msg = result.stderr if result.stderr else "Tool execution failed"
+                    return f"Error running {tool_name}: {error_msg}"
+            
             else:
-                # If no output file, return stdout/stderr
-                error_msg = result.stderr if result.stderr else "Tool execution failed"
-                return f"Error running {tool_name}: {error_msg}"
+                # Single-sequence tool (iep, charge, gc, etc.)
+                with tempfile.NamedTemporaryFile(mode='w', suffix='.fasta', delete=False) as f:
+                    f.write(f">input_seq\n{sequence}\n")
+                    input_file = f.name
+                
+                output_file = input_file.replace('.fasta', f'_{tool_name}_output.txt')
+                
+                # Build command with the tool and basic parameters
+                cmd = [tool_name, '-sequence', input_file, '-outfile', output_file]
+                
+                # Add any additional parameters from kwargs (excluding internal/non-EMBOSS keys)
+                skip_keys = {'sequence', '_gene_name', 'gene_name', 'gene'}
+                for key, value in kwargs.items():
+                    if key not in skip_keys and value is not None:
+                        # Convert kwargs to EMBOSS format (-param value)
+                        param_name = f'-{key.replace("_", "")}'
+                        cmd.extend([param_name, str(value)])
+                
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+                
+                if result.returncode == 0 and os.path.exists(output_file):
+                    with open(output_file, 'r') as f:
+                        output = f.read()
+                    
+                    # Add gene context if available
+                    if '_gene_name' in kwargs:
+                        gene = kwargs['_gene_name']
+                        output = f"Gene {gene} - {tool_name.upper()}:\n\n{output}"
+                    
+                    # Cleanup
+                    try:
+                        os.remove(input_file)
+                        os.remove(output_file)
+                    except:
+                        pass
+                    
+                    return output
+                else:
+                    # If no output file, return stdout/stderr
+                    error_msg = result.stderr if result.stderr else "Tool execution failed"
+                    return f"Error running {tool_name}: {error_msg}"
         
         except Exception as e:
             return f"Error: Failed to run {tool_name}: {str(e)}"
@@ -1560,8 +1659,8 @@ Keep it conversational and friendly."""
                         previous_sequence_type = 'cdna'
                     print(f"[Step {idx+1}/{len(steps)}] Tracked gene_name={previous_gene_name}, sequence_type={previous_sequence_type}")
                 
-                # Smart chaining: if previous step was gene_query and this step is BLAST/analysis tool
-                if previous_tool == 'gene_query' and tool_name in ['blast', 'blastn', 'blastp', 'blastx', 'search']:
+                # Smart chaining: if previous step was gene_query and this step needs sequence
+                if previous_tool == 'gene_query' and tool_name in ['blast', 'blastn', 'blastp', 'blastx', 'search', 'gc', 'translate', 'reverse', 'orf', 'pepstats', 'iep', 'cusp']:
                     seq_type = previous_sequence_type  # Use the sequence type from gene_query
                     
                     # Check if sequence parameter indicates it should come from previous step
@@ -1587,7 +1686,7 @@ Keep it conversational and friendly."""
                             # Clean up the sequence (remove formatting)
                             sequence = ''.join(c for c in sequence if c.isalpha())
                             parameters['sequence'] = sequence
-                            print(f"[Step {idx+1}/{len(steps)}] Using {seq_type} sequence ({len(sequence)} {'aa' if seq_type == 'protein' else 'bp'}) for BLAST")
+                            print(f"[Step {idx+1}/{len(steps)}] Using {seq_type} sequence ({len(sequence)} {'aa' if seq_type == 'protein' else 'bp'}) for {tool_name}")
                         else:
                             return False, [{
                                 'step': idx + 1,
@@ -1599,7 +1698,22 @@ Keep it conversational and friendly."""
                 if use_previous_result and cached_result and idx > 0:
                     # Try to use the sequence output from previous step
                     if 'sequence' not in parameters and '_sequence' not in parameters:
-                        parameters['sequence'] = cached_result
+                        # Extract just the sequence if previous output is FASTA format
+                        clean_sequence = cached_result
+                        if '>' in cached_result:
+                            # FASTA format - extract just the sequence lines
+                            lines = cached_result.split('\n')
+                            seq_lines = [line for line in lines if line and not line.startswith('>')]
+                            clean_sequence = ''.join(seq_lines).strip()
+                        else:
+                            # Try to extract just alphanumeric sequence characters
+                            import re
+                            seq_match = re.search(r'([A-Z]{10,})', cached_result, re.MULTILINE)
+                            if seq_match:
+                                clean_sequence = seq_match.group(1)
+                        
+                        parameters['sequence'] = clean_sequence
+                        print(f"[Step {idx+1}/{len(steps)}] Using previous result as sequence ({len(clean_sequence)} characters)")
                 
                 # Execute the tool
                 print(f"[Step {idx+1}/{len(steps)}] Running {tool_name}...")
@@ -2596,6 +2710,181 @@ Keep it conversational and friendly."""
         except Exception as e:
             import traceback
             return f"Track intersection failed: {str(e)}\n{traceback.format_exc()}"
+    
+    # ============================================================
+    # BIOPYTHON-POWERED TOOLS (Complement EMBOSS tools)
+    # ============================================================
+    
+    def parse_fasta_biopython(self, fasta_text: str) -> List[Tuple[str, str]]:
+        """Parse FASTA format using Biopython (more robust than regex)
+        
+        Args:
+            fasta_text: FASTA formatted text
+        
+        Returns:
+            List of (header, sequence) tuples
+        """
+        try:
+            from io import StringIO
+            from Bio import SeqIO
+            
+            sequences = []
+            for record in SeqIO.parse(StringIO(fasta_text), "fasta"):
+                sequences.append((record.description, str(record.seq)))
+            
+            return sequences
+        except Exception as e:
+            return [(f"Error: {str(e)}", "")]
+    
+    def multiple_sequence_alignment(self, sequences: List[Tuple[str, str]]) -> str:
+        """Perform multiple sequence alignment using Biopython
+        
+        Args:
+            sequences: List of (name, sequence) tuples
+        
+        Returns:
+            str: Alignment visualization
+        """
+        try:
+            from Bio import Align
+            from Bio.Seq import Seq
+            from Bio.SeqRecord import SeqRecord
+            
+            if len(sequences) < 2:
+                return "Error: Need at least 2 sequences for alignment"
+            
+            # Create sequence records
+            seq_records = [SeqRecord(Seq(seq), id=name[:20]) for name, seq in sequences]
+            
+            # Simple pairwise alignment for visualization
+            aligner = Align.PairwiseAligner()
+            aligner.mode = 'global'
+            aligner.match_score = 2
+            aligner.mismatch_score = -1
+            aligner.open_gap_score = -2
+            aligner.extend_gap_score = -0.5
+            
+            output = ["Multiple Sequence Alignment", "=" * 50, ""]
+            
+            # Align first two sequences as demo
+            alignments = aligner.align(seq_records[0].seq, seq_records[1].seq)
+            alignment = alignments[0]
+            
+            output.append(f"Alignment Score: {alignment.score}")
+            output.append(f"\n{seq_records[0].id}:")
+            output.append(str(alignment[0]))
+            output.append(f"\n{seq_records[1].id}:")
+            output.append(str(alignment[1]))
+            
+            return "\n".join(output)
+            
+        except Exception as e:
+            return f"Multiple alignment failed: {str(e)}"
+    
+    def get_protein_structure_info(self, pdb_id: str) -> str:
+        """Get protein structure information from PDB using Biopython
+        
+        Args:
+            pdb_id: PDB identifier (e.g., '1ABC')
+        
+        Returns:
+            str: Structure information
+        """
+        try:
+            from Bio.PDB import PDBList, PDBParser
+            import tempfile
+            import shutil
+            
+            # Create temp directory
+            temp_dir = tempfile.mkdtemp()
+            
+            try:
+                # Download PDB file
+                pdbl = PDBList()
+                pdb_file = pdbl.retrieve_pdb_file(pdb_id, pdir=temp_dir, file_format='pdb')
+                
+                # Parse structure
+                parser = PDBParser(QUIET=True)
+                structure = parser.get_structure(pdb_id, pdb_file)
+                
+                output = [f"PDB Structure: {pdb_id}", "=" * 50, ""]
+                
+                # Get models
+                models = list(structure.get_models())
+                output.append(f"Number of models: {len(models)}")
+                
+                # Get chains
+                for model in models[:1]:  # Just first model
+                    chains = list(model.get_chains())
+                    output.append(f"\nChains: {len(chains)}")
+                    
+                    for chain in chains:
+                        residues = list(chain.get_residues())
+                        output.append(f"  Chain {chain.id}: {len(residues)} residues")
+                        
+                        # Count atom types
+                        atoms = list(chain.get_atoms())
+                        output.append(f"    Total atoms: {len(atoms)}")
+                
+                return "\n".join(output)
+                
+            finally:
+                # Cleanup temp directory
+                shutil.rmtree(temp_dir, ignore_errors=True)
+                
+        except Exception as e:
+            return f"PDB structure retrieval failed: {str(e)}\nTry a valid PDB ID like '1ABC' or '3J7Y'"
+    
+    def calculate_molecular_weight_biopython(self, sequence: str, seq_type: str = 'protein') -> str:
+        """Calculate molecular weight using Biopython (alternative to pepstats)
+        
+        Args:
+            sequence: Amino acid or DNA sequence
+            seq_type: 'protein' or 'dna'
+        
+        Returns:
+            str: Molecular weight information
+        """
+        try:
+            from Bio.SeqUtils import molecular_weight
+            from Bio.Seq import Seq
+            
+            seq = Seq(sequence.upper())
+            
+            if seq_type == 'protein':
+                mw = molecular_weight(seq, seq_type='protein')
+            else:
+                mw = molecular_weight(seq, seq_type='DNA')
+            
+            output = [
+                f"Molecular Weight Analysis ({seq_type.upper()})",
+                "=" * 50,
+                f"Sequence length: {len(sequence)}",
+                f"Molecular weight: {mw:.2f} Da",
+                f"Molecular weight: {mw/1000:.2f} kDa",
+                ""
+            ]
+            
+            if seq_type == 'protein':
+                # Additional protein info
+                from Bio.SeqUtils.ProtParam import ProteinAnalysis
+                protein = ProteinAnalysis(str(seq))
+                
+                output.append(f"Isoelectric point: {protein.isoelectric_point():.2f}")
+                output.append(f"Aromaticity: {protein.aromaticity():.3f}")
+                output.append(f"Instability index: {protein.instability_index():.2f}")
+                
+                # Amino acid composition
+                aa_comp = protein.get_amino_acids_percent()
+                output.append("\nAmino Acid Composition (%):")
+                for aa in sorted(aa_comp.keys()):
+                    if aa_comp[aa] > 0:
+                        output.append(f"  {aa}: {aa_comp[aa]*100:.1f}%")
+            
+            return "\n".join(output)
+            
+        except Exception as e:
+            return f"Molecular weight calculation failed: {str(e)}"
 
 
 if __name__ == "__main__":

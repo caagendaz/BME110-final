@@ -86,7 +86,8 @@ EMBOSS tools (use 'sequence' for raw DNA/protein sequences):
 - translate: Translate DNA to protein. Needs "sequence"
 - reverse: Reverse complement DNA. Needs "sequence"
 - orf: Find open reading frames. Needs "sequence" and optional "min_size"
-- align: Align two sequences. Needs "seq1" and "seq2"
+- align: Global alignment of two sequences (Needleman-Wunsch). Needs "seq1" and "seq2". USE THIS for "align", "alignment"
+- dotplot: Dot plot comparison of two sequences (visual similarity). Needs "seq1" and "seq2". USE THIS for "dot plot", "dotplot", "compare visually"
 - pattern: Search for patterns. Needs "sequence" and optional "pattern"
 - restriction: Find restriction sites. Needs "sequence" and optional "enzyme"
 - shuffle: Shuffle sequence. Needs "sequence"
@@ -174,14 +175,17 @@ GENE SYMBOL SUPPORT (cloud only):
         base_prompt += """
 Decision logic:
 - IMPORTANT PROTEIN ANALYSIS: If "molecular weight", "mass", "MW" -> use pepstats (NOT info)
-- If "isoelectric point", "pI", "charge" -> use iep (NOT info)
+- CRITICAL PROTEIN FROM DNA: If "isoelectric point", "pI", "charge" requested with DNA sequence -> create multi-step: translate THEN iep
+- CRITICAL PROTEIN FROM DNA: If "pepstats", "molecular weight", "MW" requested with DNA sequence -> create multi-step: translate THEN pepstats
 - If "codon usage", "codon frequency" -> use cusp
-- If raw DNA/RNA/protein sequences (ATGCCC, MKLA...) -> use appropriate EMBOSS tool with sequence parameter
-- IMPORTANT: If user provides ONLY a DNA sequence without specifying an operation (especially long sequences >100bp), AND asks general questions like "what is this", "analyze", "characterize", or provides NO specific instruction -> assume they want genomic characterization with multi-step: blat + ucsc_table + blast
+- CRITICAL: If "gc content", "gc%", "calculate gc", "find gc" mentioned -> ALWAYS use gc tool with sequence parameter (NOT blat, NOT characterization)
+- CRITICAL TWO-SEQUENCE TOOLS: If "dot plot", "dotplot", "align", "compare two sequences" mentioned -> use dotplot or align tool with seq1 and seq2 parameters (NOT blat, NOT characterization)
+- If raw DNA/RNA/protein sequences (ATGCCC, MKLA...) with specific tool request -> use appropriate EMBOSS tool with sequence parameter
 """
         
         if self.mode == 'cloud':
-            base_prompt += """- If GENE NAME/SYMBOL mentioned -> use gene_query or tool with gene_name parameter
+            base_prompt += """- IMPORTANT: If user provides ONLY a DNA sequence without specifying an operation (especially long sequences >100bp), AND asks general questions like "what is this", "analyze", "characterize", or provides NO specific instruction -> assume they want genomic characterization with multi-step: blat + ucsc_table + blast
+- If GENE NAME/SYMBOL mentioned -> use gene_query or tool with gene_name parameter
 - If chromosome/genomic position -> use genome_query
 - If "BLAST", "search", "similar", "homologous" -> use blast/blastn/blastp
 - If "characterize", "analyze", "mystery sequence", "what is this sequence", "identify sequence" -> create multi-step workflow:
@@ -198,6 +202,18 @@ Examples:
 - "What's the reverse complement of ATGC?" -> reverse tool with sequence: ATGC
 - "Calculate molecular weight of MKTAYIAK" -> pepstats tool with sequence: MKTAYIAK
 - "Isoelectric point of MKTAYIAK?" -> iep tool with sequence: MKTAYIAK
+- "Make a dot plot of these two sequences" -> dotplot tool with seq1: [first sequence], seq2: [second sequence]
+- "Align seq1 and seq2" -> align tool with seq1: [first sequence], seq2: [second sequence]
+- "Find isoelectric point of ATGCCC" (DNA sequence) -> multi-step:
+  {"steps": [
+    {"tool": "translate", "parameters": {"sequence": "ATGCCC"}},
+    {"tool": "iep", "parameters": {"sequence": "USE_PREVIOUS_RESULT"}}
+  ], "explanation": "Translate DNA to protein, then calculate isoelectric point", "use_previous_result": true}
+- "Molecular weight of ATGCCC" (DNA sequence) -> multi-step:
+  {"steps": [
+    {"tool": "translate", "parameters": {"sequence": "ATGCCC"}},
+    {"tool": "pepstats", "parameters": {"sequence": "USE_PREVIOUS_RESULT"}}
+  ], "explanation": "Translate DNA to protein, then calculate molecular weight", "use_previous_result": true}
 """
         
         if self.mode == 'cloud':
@@ -653,7 +669,10 @@ Analysis Type: Gene annotation retrieval, genomic coordinate mapping, sequence h
         if any(word in query_lower for word in ['restrict', 'restriction', 'enzyme', 'cut']):
             suggestions.append('restriction')
         
-        if any(word in query_lower for word in ['info', 'information', 'length', 'gc content']):
+        if any(word in query_lower for word in ['gc content', 'gc%', 'gc percent', 'calculate gc', 'find gc']):
+            suggestions.append('gc')
+        
+        if any(word in query_lower for word in ['info', 'information', 'length']):
             suggestions.append('info')
         
         if any(word in query_lower for word in ['pattern', 'motif', 'search', 'find']):
