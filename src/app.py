@@ -656,216 +656,257 @@ def main():
                         st.success(f"✓ Processing query for {len(sequences)} sequences from {filename}")
                         st.markdown('</div>', unsafe_allow_html=True)
                         
-                        # For file-based queries, try to detect operations directly to avoid Gemini filters
+                        # Check if this is a two-sequence comparison tool
                         query_lower = user_query.lower()
-                        detected_operations = []
-                        detected_tools = set()  # Track which tools we've already added
+                        two_seq_tools = ['align', 'water', 'stretcher', 'matcher', 'dotplot', 'dot plot', 
+                                        'compare', 'alignment', 'similarity', 'match']
+                        is_comparison = any(tool in query_lower for tool in two_seq_tools)
                         
-                        # Define keyword mappings to tools (order matters - longer phrases first)
-                        tool_keywords = [
-                            ('gc content', 'gc_content', {}, 'Calculate GC content'),
-                            ('reverse complement', 'reverse', {}, 'Reverse complement'),
-                            ('isoelectric point', 'iep', {}, 'Calculate isoelectric point'),
-                            ('molecular weight', 'pepstats', {}, 'Get protein statistics including molecular weight'),
-                            ('protein stats', 'pepstats', {}, 'Get protein statistics'),
-                            ('open reading', 'orf', {}, 'Find open reading frames'),
-                            ('gc', 'gc_content', {}, 'Calculate GC content'),
-                            ('translate', 'translate', {}, 'Translate to protein'),
-                            ('reverse', 'reverse', {}, 'Reverse complement'),
-                            ('isoelectric', 'iep', {}, 'Calculate isoelectric point'),
-                            ('pepstats', 'pepstats', {}, 'Get protein statistics'),
-                            ('orf', 'orf', {}, 'Find open reading frames'),
-                        ]
-                        
-                        # Check which operations are mentioned (avoid duplicates)
-                        for keyword, tool, params, explanation in tool_keywords:
-                            if keyword in query_lower and tool not in detected_tools:
-                                detected_operations.append({
-                                    'tool': tool,
-                                    'parameters': params.copy(),
-                                    'explanation': explanation
-                                })
-                                detected_tools.add(tool)
-                        
-                        # If we detected operations directly, use them instead of calling Gemini
-                        if detected_operations:
-                            st.info(f"**Detected {len(detected_operations)} operation(s)**")
+                        # If we have exactly 2 sequences and query mentions comparison, handle as two-sequence comparison
+                        if len(sequences) == 2 and is_comparison:
+                            seq1_header, seq1 = sequences[0]
+                            seq2_header, seq2 = sequences[1]
                             
-                            # Process each detected operation
-                            for op_idx, op_info in enumerate(detected_operations, 1):
-                                if len(detected_operations) > 1:
-                                    st.markdown(f"### Operation {op_idx}: {op_info['explanation']}")
-                                else:
-                                    st.info(f"**Action:** {op_info['explanation']}")
-                                
-                                st.write(f"**Tool:** {op_info['tool']}")
-                                
-                                # Progress tracking
-                                progress_bar = st.progress(0)
-                                status_text = st.empty()
-                                
-                                all_results = []
-                                
-                                # Process each sequence
-                                for i, (header, seq) in enumerate(sequences):
-                                    progress = (i + 1) / len(sequences)
-                                    progress_bar.progress(progress)
-                                    status_text.text(f"Processing {i+1}/{len(sequences)}: {header[:50]}...")
-                                    
-                                    try:
-                                        # Override sequence parameter with current sequence
-                                        params = op_info['parameters'].copy()
-                                        params['sequence'] = seq
-                                        
-                                        # Execute tool
-                                        result = emboss.run_tool(op_info['tool'], **params)
-                                        all_results.append({
-                                            'header': header,
-                                            'result': result
-                                        })
-                                    except Exception as e:
-                                        all_results.append({
-                                            'header': header,
-                                            'result': f"Error: {str(e)}"
-                                        })
-                                
-                                progress_bar.progress(1.0)
-                                status_text.text("✓ Complete!")
-                                
-                                # Display results
-                                st.markdown("#### Results:")
-                                for item in all_results:
-                                    with st.expander(f"📄 {item['header']}", expanded=(len(all_results) == 1)):
-                                        display_result(item['result'])
-                                
-                                if len(detected_operations) > 1:
-                                    st.markdown("---")
-                        
-                        # Only proceed with Gemini parsing if we didn't detect operations directly
-                        if not detected_operations:
-                            # Fall back to Gemini if we couldn't detect operations directly
-                            # Simplify query by removing file references and adding a placeholder sequence
-                            # This prevents Gemini from seeing actual sequence data which can trigger filters
-                            simplified_query = user_query.lower()
+                            st.info(f"**Detected two-sequence comparison:**")
+                            st.write(f"• Sequence 1: {seq1_header} ({len(seq1)} bp)")
+                            st.write(f"• Sequence 2: {seq2_header} ({len(seq2)} bp)")
                             
-                            # Remove file references
-                            for keyword in ['in the file', 'in the uploaded file', 'from the file', 'in file', 
-                                           'from file', 'in uploaded file', 'of the file', 'the sequences',
-                                           'of the uploaded', 'the uploaded', 'uploaded', 'of the sequence',
-                                           'the sequence in']:
-                                simplified_query = simplified_query.replace(keyword, '')
+                            # Parse query WITHOUT sequences to get tool name
+                            success, result = nlp.parse_user_query(user_query)
                             
-                            # Clean up extra spaces and "and" at the beginning
-                            simplified_query = ' '.join(simplified_query.split())
-                            if simplified_query.startswith('and '):
-                                simplified_query = simplified_query[4:]
-                            
-                            # For multi-operation queries, split them into numbered questions
-                            # This uses the existing multi-question parsing which is more reliable
-                            if ' and the ' in simplified_query or ' and ' in simplified_query:
-                                # Split on "and the" or "and"
-                                if ' and the ' in simplified_query:
-                                    parts = simplified_query.split(' and the ')
-                                else:
-                                    parts = simplified_query.split(' and ')
-                                
-                                # Format as numbered questions if we have multiple parts
-                                if len(parts) >= 2:
-                                    numbered_questions = []
-                                    for i, part in enumerate(parts, 1):
-                                        part = part.strip()
-                                        # Ensure each part has a verb
-                                        if not any(verb in part for verb in ['find', 'get', 'calculate', 'show', 'translate', 'determine']):
-                                            part = f"find {part}"
-                                        numbered_questions.append(f"{i}. {part}")
-                                    simplified_query = " ".join(numbered_questions)
-                            
-                            # Add a generic sequence placeholder so Gemini knows it's a sequence operation
-                            if "sequence" not in simplified_query:
-                                simplified_query = simplified_query.strip() + " of ATGC"
-                            
-                            # Parse the simplified query to understand what tool to use
-                            success, result = nlp.parse_user_query(simplified_query)
-                            
-                            if success and 'tool' in result:
+                            if success:
                                 tool_name = result.get('tool')
-                                parameters = result.get('parameters', {})
                                 explanation = result.get('explanation', '')
                                 
                                 st.info(f"**Action:** {explanation}")
                                 st.write(f"**Tool:** {tool_name}")
                                 
-                                # Progress tracking
-                                progress_bar = st.progress(0)
-                                status_text = st.empty()
-                                
-                                all_results = []
-                                
-                                # Process each sequence
-                                for i, (header, seq) in enumerate(sequences):
-                                    progress = (i + 1) / len(sequences)
-                                    progress_bar.progress(progress)
-                                    status_text.text(f"Processing {i+1}/{len(sequences)}: {header[:50]}...")
+                                # Run comparison tool
+                                try:
+                                    result_data = emboss.run_tool(tool_name, seq1=seq1, seq2=seq2)
                                     
-                                    try:
-                                        # Override sequence parameter with current sequence
-                                        params = parameters.copy()
-                                        params['sequence'] = seq
-                                        
-                                        # Execute tool
-                                        if tool_name == 'genome_query':
-                                            result_text = emboss.query_ucsc_genome(
-                                                params.get('genome', ''),
-                                                params.get('chrom', ''),
-                                                int(params.get('start', 0)),
-                                                int(params.get('end', 0))
-                                            )
-                                        elif tool_name == 'gene_query':
-                                            result_text = emboss.query_gene_info(
-                                                params.get('gene_name', ''),
-                                                params.get('genome', 'hg38'),
-                                                params.get('track', 'gencode')
-                                            )
-                                        else:
-                                            result_text = emboss.run_tool(tool_name, **params)
-                                        
-                                        all_results.append((header, result_text))
-                                        
-                                    except Exception as e:
-                                        all_results.append((header, f"ERROR: {str(e)}"))
-                                
-                                status_text.text("✓ Analysis complete!")
-                                progress_bar.progress(1.0)
-                                
-                                # Display results
-                                st.markdown("---")
-                                st.subheader("📊 Results")
-                                
-                                for header, result_text in all_results:
-                                    with st.expander(f"📄 {header}"):
-                                        st.code(result_text, language="text")
-                                
-                                # Download button
-                                combined_results = ""
-                                for header, result_text in all_results:
-                                    combined_results += f"{'='*60}\n"
-                                    combined_results += f"Sequence: {header}\n"
-                                    combined_results += f"Tool: {tool_name}\n"
-                                    combined_results += f"Query: {user_query}\n"
-                                    combined_results += f"{'='*60}\n"
-                                    combined_results += f"{result_text}\n\n"
-                                
-                                st.download_button(
-                                    label="📥 Download All Results",
-                                    data=combined_results,
-                                    file_name=f"{tool_name}_results.txt",
-                                    mime="text/plain",
-                                    type="primary"
-                                )
+                                    st.markdown("---")
+                                    st.subheader("📊 Results")
+                                    display_result(result_data)
+                                    
+                                except Exception as e:
+                                    st.error(f"Error running {tool_name}: {str(e)}")
                             else:
-                                st.error("Could not parse query. Please be more specific about what analysis to perform.")
-                                if 'error' in result:
-                                    st.error(f"Could not parse query: {result['error']}")
+                                st.error("Could not determine which tool to use")
+                            
+                            # Mark as handled
+                            success = True
+                        else:
+                            # Regular batch processing for single-sequence tools or more than 2 sequences
+                            # For file-based queries, try to detect operations directly to avoid Gemini filters
+                            detected_operations = []
+                            detected_tools = set()  # Track which tools we've already added
+                            
+                            # Define keyword mappings to tools (order matters - longer phrases first)
+                            tool_keywords = [
+                                ('gc content', 'gc_content', {}, 'Calculate GC content'),
+                                ('reverse complement', 'reverse', {}, 'Reverse complement'),
+                                ('isoelectric point', 'iep', {}, 'Calculate isoelectric point'),
+                                ('molecular weight', 'pepstats', {}, 'Get protein statistics including molecular weight'),
+                                ('protein stats', 'pepstats', {}, 'Get protein statistics'),
+                                ('open reading', 'orf', {}, 'Find open reading frames'),
+                                ('gc', 'gc_content', {}, 'Calculate GC content'),
+                                ('translate', 'translate', {}, 'Translate to protein'),
+                                ('reverse', 'reverse', {}, 'Reverse complement'),
+                                ('isoelectric', 'iep', {}, 'Calculate isoelectric point'),
+                                ('pepstats', 'pepstats', {}, 'Get protein statistics'),
+                                ('orf', 'orf', {}, 'Find open reading frames'),
+                            ]
+                            
+                            # Check which operations are mentioned (avoid duplicates)
+                            for keyword, tool, params, explanation in tool_keywords:
+                                if keyword in query_lower and tool not in detected_tools:
+                                    detected_operations.append({
+                                        'tool': tool,
+                                        'parameters': params.copy(),
+                                        'explanation': explanation
+                                    })
+                                    detected_tools.add(tool)
+                            
+                            # If we detected operations directly, use them instead of calling Gemini
+                            if detected_operations:
+                                st.info(f"**Detected {len(detected_operations)} operation(s)**")
+                                
+                                # Process each detected operation
+                                for op_idx, op_info in enumerate(detected_operations, 1):
+                                    if len(detected_operations) > 1:
+                                        st.markdown(f"### Operation {op_idx}: {op_info['explanation']}")
+                                    else:
+                                        st.info(f"**Action:** {op_info['explanation']}")
+                                    
+                                    st.write(f"**Tool:** {op_info['tool']}")
+                                    
+                                    # Progress tracking
+                                    progress_bar = st.progress(0)
+                                    status_text = st.empty()
+                                    
+                                    all_results = []
+                                    
+                                    # Process each sequence
+                                    for i, (header, seq) in enumerate(sequences):
+                                        progress = (i + 1) / len(sequences)
+                                        progress_bar.progress(progress)
+                                        status_text.text(f"Processing {i+1}/{len(sequences)}: {header[:50]}...")
+                                        
+                                        try:
+                                            # Override sequence parameter with current sequence
+                                            params = op_info['parameters'].copy()
+                                            params['sequence'] = seq
+                                            
+                                            # Execute tool
+                                            result = emboss.run_tool(op_info['tool'], **params)
+                                            all_results.append({
+                                                'header': header,
+                                                'result': result
+                                            })
+                                        except Exception as e:
+                                            all_results.append({
+                                                'header': header,
+                                                'result': f"Error: {str(e)}"
+                                            })
+                                    
+                                    progress_bar.progress(1.0)
+                                    status_text.text("✓ Complete!")
+                                    
+                                    # Display results
+                                    st.markdown("#### Results:")
+                                    for item in all_results:
+                                        with st.expander(f"📄 {item['header']}", expanded=(len(all_results) == 1)):
+                                            display_result(item['result'])
+                                    
+                                    if len(detected_operations) > 1:
+                                        st.markdown("---")
+                            
+                            # Only proceed with Gemini parsing if we didn't detect operations directly
+                            if not detected_operations:
+                                # Fall back to Gemini if we couldn't detect operations directly
+                                # Simplify query by removing file references and adding a placeholder sequence
+                                # This prevents Gemini from seeing actual sequence data which can trigger filters
+                                simplified_query = user_query.lower()
+                                
+                                # Remove file references
+                                for keyword in ['in the file', 'in the uploaded file', 'from the file', 'in file', 
+                                               'from file', 'in uploaded file', 'of the file', 'the sequences',
+                                               'of the uploaded', 'the uploaded', 'uploaded', 'of the sequence',
+                                               'the sequence in']:
+                                    simplified_query = simplified_query.replace(keyword, '')
+                                
+                                # Clean up extra spaces and "and" at the beginning
+                                simplified_query = ' '.join(simplified_query.split())
+                                if simplified_query.startswith('and '):
+                                    simplified_query = simplified_query[4:]
+                                
+                                # For multi-operation queries, split them into numbered questions
+                                # This uses the existing multi-question parsing which is more reliable
+                                if ' and the ' in simplified_query or ' and ' in simplified_query:
+                                    # Split on "and the" or "and"
+                                    if ' and the ' in simplified_query:
+                                        parts = simplified_query.split(' and the ')
+                                    else:
+                                        parts = simplified_query.split(' and ')
+                                    
+                                    # Format as numbered questions if we have multiple parts
+                                    if len(parts) >= 2:
+                                        numbered_questions = []
+                                        for i, part in enumerate(parts, 1):
+                                            part = part.strip()
+                                            # Ensure each part has a verb
+                                            if not any(verb in part for verb in ['find', 'get', 'calculate', 'show', 'translate', 'determine']):
+                                                part = f"find {part}"
+                                            numbered_questions.append(f"{i}. {part}")
+                                        simplified_query = " ".join(numbered_questions)
+                                
+                                # Add a generic sequence placeholder so Gemini knows it's a sequence operation
+                                if "sequence" not in simplified_query:
+                                    simplified_query = simplified_query.strip() + " of ATGC"
+                                
+                                # Parse the simplified query to understand what tool to use
+                                success, result = nlp.parse_user_query(simplified_query)
+                                
+                                if success and 'tool' in result:
+                                    tool_name = result.get('tool')
+                                    parameters = result.get('parameters', {})
+                                    explanation = result.get('explanation', '')
+                                    
+                                    st.info(f"**Action:** {explanation}")
+                                    st.write(f"**Tool:** {tool_name}")
+                                    
+                                    # Progress tracking
+                                    progress_bar = st.progress(0)
+                                    status_text = st.empty()
+                                    
+                                    all_results = []
+                                    
+                                    # Process each sequence
+                                    for i, (header, seq) in enumerate(sequences):
+                                        progress = (i + 1) / len(sequences)
+                                        progress_bar.progress(progress)
+                                        status_text.text(f"Processing {i+1}/{len(sequences)}: {header[:50]}...")
+                                        
+                                        try:
+                                            # Override sequence parameter with current sequence
+                                            params = parameters.copy()
+                                            params['sequence'] = seq
+                                            
+                                            # Execute tool
+                                            if tool_name == 'genome_query':
+                                                result_text = emboss.query_ucsc_genome(
+                                                    params.get('genome', ''),
+                                                    params.get('chrom', ''),
+                                                    int(params.get('start', 0)),
+                                                    int(params.get('end', 0))
+                                                )
+                                            elif tool_name == 'gene_query':
+                                                result_text = emboss.query_gene_info(
+                                                    params.get('gene_name', ''),
+                                                    params.get('genome', 'hg38'),
+                                                    params.get('track', 'gencode')
+                                                )
+                                            else:
+                                                result_text = emboss.run_tool(tool_name, **params)
+                                            
+                                            all_results.append((header, result_text))
+                                            
+                                        except Exception as e:
+                                            all_results.append((header, f"ERROR: {str(e)}"))
+                                    
+                                    status_text.text("✓ Analysis complete!")
+                                    progress_bar.progress(1.0)
+                                    
+                                    # Display results
+                                    st.markdown("---")
+                                    st.subheader("📊 Results")
+                                    
+                                    for header, result_text in all_results:
+                                        with st.expander(f"📄 {header}"):
+                                            st.code(result_text, language="text")
+                                    
+                                    # Download button
+                                    combined_results = ""
+                                    for header, result_text in all_results:
+                                        combined_results += f"{'='*60}\n"
+                                        combined_results += f"Sequence: {header}\n"
+                                        combined_results += f"Tool: {tool_name}\n"
+                                        combined_results += f"Query: {user_query}\n"
+                                        combined_results += f"{'='*60}\n"
+                                        combined_results += f"{result_text}\n\n"
+                                    
+                                    st.download_button(
+                                        label="📥 Download All Results",
+                                        data=combined_results,
+                                        file_name=f"{tool_name}_results.txt",
+                                        mime="text/plain",
+                                        type="primary"
+                                    )
+                                else:
+                                    st.error("Could not parse query. Please be more specific about what analysis to perform.")
+                                    if 'error' in result:
+                                        st.error(f"Could not parse query: {result['error']}")
                     
                     elif references_file and not has_uploaded:
                         success = False  # Initialize for error handling below
