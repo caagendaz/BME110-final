@@ -88,7 +88,43 @@ class EMBOSSWrapper:
             'structure': 'protein_structure',
             'protein_structure': 'protein_structure',
             'biopython_mw': 'molecular_weight_biopython',
-            'protparam': 'molecular_weight_biopython'
+            'protparam': 'molecular_weight_biopython',
+            # Phylogenetics
+            'phylo': 'phylogenetic_tree',
+            'phylogenetic_tree': 'phylogenetic_tree',
+            'tree': 'phylogenetic_tree',
+            'phylogeny': 'phylogenetic_tree',
+            # Motif analysis
+            'motif': 'find_motifs',
+            'motifs': 'find_motifs',
+            'find_motif': 'find_motifs',
+            'consensus_motif': 'motif_consensus',
+            # Primer design
+            'primer': 'primer_analysis',
+            'primers': 'primer_analysis',
+            'primer_tm': 'primer_analysis',
+            'melting_temp': 'primer_analysis',
+            # Restriction enzymes (advanced)
+            'restriction_batch': 'restriction_batch_analysis',
+            'restriction_map': 'restriction_map',
+            'digest': 'restriction_batch_analysis',
+            # Sequence manipulation
+            'extract_features': 'extract_sequence_features',
+            'features': 'extract_sequence_features',
+            'transcribe': 'transcribe_sequence',
+            'back_transcribe': 'back_transcribe',
+            # Codon optimization
+            'codon_optimize': 'codon_optimize',
+            'optimize_codons': 'codon_optimize',
+            # Sequence comparison
+            'pairwise_compare': 'pairwise_comparison',
+            'compare_sequences': 'pairwise_comparison',
+            # Protein analysis
+            'secondary_structure': 'predict_secondary_structure',
+            'hydrophobicity': 'hydrophobicity_plot',
+            # Sequence statistics
+            'entropy': 'sequence_entropy',
+            'complexity': 'sequence_complexity'
         }
         
         # Tool descriptions for user guidance
@@ -120,7 +156,21 @@ class EMBOSSWrapper:
             # Biopython tools
             'msa': 'Multiple sequence alignment (Biopython)',
             'pdb': 'Get protein 3D structure information from PDB',
-            'protparam': 'Advanced protein analysis (Biopython ProtParam)'
+            'protparam': 'Advanced protein analysis (Biopython ProtParam)',
+            'phylo': 'Build phylogenetic tree from sequences',
+            'motif': 'Find and analyze sequence motifs',
+            'primer': 'Primer design and Tm calculation',
+            'restriction_batch': 'Batch restriction enzyme analysis',
+            'restriction_map': 'Generate restriction map',
+            'extract_features': 'Extract sequence features and annotations',
+            'transcribe': 'Transcribe DNA to RNA',
+            'back_transcribe': 'Back-transcribe RNA to DNA',
+            'codon_optimize': 'Optimize codon usage for expression',
+            'pairwise_compare': 'Detailed pairwise sequence comparison',
+            'secondary_structure': 'Predict protein secondary structure',
+            'hydrophobicity': 'Calculate hydrophobicity profile',
+            'entropy': 'Calculate sequence entropy/complexity',
+            'complexity': 'Analyze sequence complexity'
         }
         
         # Cache for available EMBOSS tools
@@ -1485,6 +1535,77 @@ Keep it conversational and friendly."""
             sequence = kwargs.get('sequence', '')
             seq_type = kwargs.get('seq_type', 'protein')
             return self.calculate_molecular_weight_biopython(sequence, seq_type)
+        # Phylogenetics
+        elif emboss_name == 'phylogenetic_tree':
+            sequences = kwargs.get('sequences', [])
+            if not sequences:
+                return "Error: Provide 'sequences' as list of (name, seq) tuples"
+            return self.phylogenetic_tree(sequences)
+        # Motif analysis
+        elif emboss_name == 'find_motifs':
+            sequences = kwargs.get('sequences', [])
+            if not sequences:
+                return "Error: Provide 'sequences' as list of (name, seq) tuples"
+            return self.find_motifs(sequences)
+        elif emboss_name == 'motif_consensus':
+            sequences = kwargs.get('sequences', [])
+            if not sequences:
+                return "Error: Provide 'sequences' as list of (name, seq) tuples"
+            return self.motif_consensus(sequences)
+        # Primer analysis
+        elif emboss_name == 'primer_analysis':
+            sequence = kwargs.get('sequence', '')
+            if not sequence:
+                return "Error: Provide primer 'sequence'"
+            return self.primer_analysis(sequence)
+        # Restriction enzymes
+        elif emboss_name == 'restriction_batch_analysis':
+            sequence = kwargs.get('sequence', '')
+            enzymes = kwargs.get('enzymes', None)
+            if not sequence:
+                return "Error: Provide DNA 'sequence'"
+            return self.restriction_batch_analysis(sequence, enzymes)
+        elif emboss_name == 'restriction_map':
+            sequence = kwargs.get('sequence', '')
+            if not sequence:
+                return "Error: Provide DNA 'sequence'"
+            return self.restriction_map(sequence)
+        # Sequence manipulation
+        elif emboss_name == 'extract_sequence_features':
+            sequence = kwargs.get('sequence', '')
+            seq_type = kwargs.get('seq_type', 'dna')
+            return self.extract_sequence_features(sequence, seq_type)
+        elif emboss_name == 'transcribe_sequence':
+            sequence = kwargs.get('sequence', '')
+            return self.transcribe_sequence(sequence)
+        elif emboss_name == 'back_transcribe':
+            sequence = kwargs.get('sequence', '')
+            return self.back_transcribe(sequence)
+        elif emboss_name == 'codon_optimize':
+            sequence = kwargs.get('sequence', '')
+            organism = kwargs.get('organism', 'human')
+            return self.codon_optimize(sequence, organism)
+        # Sequence comparison
+        elif emboss_name == 'pairwise_comparison':
+            seq1 = kwargs.get('seq1', '')
+            seq2 = kwargs.get('seq2', '')
+            if not (seq1 and seq2):
+                return "Error: Provide 'seq1' and 'seq2'"
+            return self.pairwise_comparison(seq1, seq2)
+        # Protein analysis
+        elif emboss_name == 'predict_secondary_structure':
+            sequence = kwargs.get('sequence', '')
+            return self.predict_secondary_structure(sequence)
+        elif emboss_name == 'hydrophobicity_plot':
+            sequence = kwargs.get('sequence', '')
+            return self.hydrophobicity_plot(sequence)
+        # Sequence statistics
+        elif emboss_name == 'sequence_entropy':
+            sequence = kwargs.get('sequence', '')
+            return self.sequence_entropy(sequence)
+        elif emboss_name == 'sequence_complexity':
+            sequence = kwargs.get('sequence', '')
+            return self.sequence_complexity(sequence)
         else:
             # Generic EMBOSS tool fallback
             return self._run_generic_emboss_tool(emboss_name, **kwargs)
@@ -2885,6 +3006,690 @@ Keep it conversational and friendly."""
             
         except Exception as e:
             return f"Molecular weight calculation failed: {str(e)}"
+    
+    def phylogenetic_tree(self, sequences: list) -> str:
+        """Build phylogenetic tree from sequences using UPGMA clustering
+        
+        Args:
+            sequences: List of (name, sequence) tuples
+            
+        Returns:
+            str: Tree in Newick format with distance matrix
+        """
+        try:
+            from Bio import Phylo
+            from Bio.Phylo.TreeConstruction import DistanceCalculator, DistanceTreeConstructor
+            from Bio.Align import MultipleSeqAlignment
+            from Bio.SeqRecord import SeqRecord
+            from Bio.Seq import Seq
+            import io
+            
+            if len(sequences) < 3:
+                return "Error: Need at least 3 sequences for phylogenetic tree"
+            
+            # Create alignment
+            seq_records = [SeqRecord(Seq(seq), id=name) for name, seq in sequences]
+            alignment = MultipleSeqAlignment(seq_records)
+            
+            # Calculate distance matrix
+            calculator = DistanceCalculator('identity')
+            dm = calculator.get_distance(alignment)
+            
+            # Construct tree using UPGMA
+            constructor = DistanceTreeConstructor(calculator, 'upgma')
+            tree = constructor.build_tree(alignment)
+            
+            # Convert tree to string
+            output = io.StringIO()
+            Phylo.draw_ascii(tree, file=output)
+            tree_ascii = output.getvalue()
+            
+            # Also get Newick format
+            newick_output = io.StringIO()
+            Phylo.write(tree, newick_output, 'newick')
+            newick = newick_output.getvalue()
+            
+            result = ["Phylogenetic Tree (UPGMA):\n", tree_ascii]
+            result.append(f"\nNewick Format:\n{newick}")
+            result.append("\nDistance Matrix:")
+            for i, name1 in enumerate(dm.names):
+                row = [f"{dm[name1, name2]:.3f}" for name2 in dm.names]
+                result.append(f"  {name1}: {' '.join(row)}")
+            
+            return "\n".join(result)
+            
+        except Exception as e:
+            return f"Phylogenetic tree construction failed: {str(e)}"
+    
+    def find_motifs(self, sequences: list) -> str:
+        """Find common motifs in sequences
+        
+        Args:
+            sequences: List of (name, sequence) tuples
+            
+        Returns:
+            str: Motif analysis results
+        """
+        try:
+            from Bio import motifs
+            from Bio.Seq import Seq
+            
+            if len(sequences) < 2:
+                return "Error: Need at least 2 sequences for motif finding"
+            
+            # Create motif instances
+            instances = [Seq(seq) for _, seq in sequences]
+            m = motifs.create(instances)
+            
+            output = ["Motif Analysis:\n"]
+            output.append(f"Number of sequences: {len(sequences)}")
+            output.append(f"Sequence length: {len(instances[0])}")
+            output.append(f"\nConsensus sequence: {m.consensus}")
+            output.append(f"Anticonsensus sequence: {m.anticonsensus}")
+            
+            # Position weight matrix
+            output.append("\nPosition Weight Matrix:")
+            pwm = m.counts.normalize()
+            for base in ['A', 'C', 'G', 'T']:
+                if base in pwm:
+                    values = [f"{v:.2f}" for v in pwm[base]]
+                    output.append(f"  {base}: {' '.join(values[:20])}")  # Show first 20 positions
+            
+            return "\n".join(output)
+            
+        except Exception as e:
+            return f"Motif finding failed: {str(e)}"
+    
+    def motif_consensus(self, sequences: list) -> str:
+        """Generate consensus motif from sequences
+        
+        Args:
+            sequences: List of (name, sequence) tuples
+            
+        Returns:
+            str: Consensus sequence with IUPAC codes
+        """
+        try:
+            from Bio import motifs
+            from Bio.Seq import Seq
+            
+            instances = [Seq(seq) for _, seq in sequences]
+            m = motifs.create(instances)
+            
+            output = [f"Consensus: {m.consensus}"]
+            output.append(f"Degenerate consensus (IUPAC): {m.degenerate_consensus}")
+            
+            return "\n".join(output)
+            
+        except Exception as e:
+            return f"Consensus motif generation failed: {str(e)}"
+    
+    def primer_analysis(self, sequence: str) -> str:
+        """Analyze primer properties (Tm, GC content, secondary structure)
+        
+        Args:
+            sequence: Primer sequence
+            
+        Returns:
+            str: Primer analysis results
+        """
+        try:
+            from Bio.SeqUtils import MeltingTemp as mt
+            from Bio.Seq import Seq
+            
+            seq = Seq(sequence.upper().replace(' ', '').replace('\n', ''))
+            
+            if len(seq) < 10:
+                return "Warning: Primer too short (< 10 bp)"
+            if len(seq) > 40:
+                return "Warning: Primer too long (> 40 bp)"
+            
+            # Calculate melting temperature using different methods
+            tm_wallace = mt.Tm_Wallace(seq)
+            tm_gc = mt.Tm_GC(seq)
+            
+            # GC content
+            gc_count = seq.count('G') + seq.count('C')
+            gc_percent = (gc_count / len(seq)) * 100
+            
+            # Check for runs
+            has_runs = any(base*4 in str(seq) for base in 'ATGC')
+            
+            # GC clamp
+            gc_clamp = str(seq)[-5:].count('G') + str(seq)[-5:].count('C')
+            
+            output = [f"Primer Analysis for: {sequence}\n"]
+            output.append(f"Length: {len(seq)} bp")
+            output.append(f"GC Content: {gc_percent:.1f}%")
+            output.append(f"Tm (Wallace): {tm_wallace:.1f}°C")
+            output.append(f"Tm (GC-based): {tm_gc:.1f}°C")
+            output.append(f"GC Clamp (last 5 bp): {gc_clamp} G/C bases")
+            
+            # Quality checks
+            output.append("\nQuality Checks:")
+            if 40 <= gc_percent <= 60:
+                output.append("  ✓ GC content optimal (40-60%)")
+            else:
+                output.append(f"  ✗ GC content suboptimal ({gc_percent:.1f}%)")
+            
+            if 50 <= tm_wallace <= 65:
+                output.append("  ✓ Tm in optimal range (50-65°C)")
+            else:
+                output.append(f"  ✗ Tm outside optimal range ({tm_wallace:.1f}°C)")
+            
+            if gc_clamp >= 2:
+                output.append("  ✓ Good GC clamp (≥2)")
+            else:
+                output.append("  ✗ Weak GC clamp")
+            
+            if has_runs:
+                output.append("  ✗ Contains runs of 4+ identical bases")
+            else:
+                output.append("  ✓ No problematic runs")
+            
+            return "\n".join(output)
+            
+        except Exception as e:
+            return f"Primer analysis failed: {str(e)}"
+    
+    def restriction_batch_analysis(self, sequence: str, enzymes=None) -> str:
+        """Analyze restriction enzyme sites in batch
+        
+        Args:
+            sequence: DNA sequence
+            enzymes: List of enzyme names (None = all commercial enzymes)
+            
+        Returns:
+            str: Restriction analysis results
+        """
+        try:
+            from Bio import Restriction
+            from Bio.Seq import Seq
+            
+            seq = Seq(sequence.upper().replace(' ', '').replace('\n', ''))
+            
+            if enzymes:
+                # Use specified enzymes
+                enzyme_list = []
+                for enz_name in enzymes:
+                    try:
+                        enzyme_list.append(getattr(Restriction, enz_name))
+                    except AttributeError:
+                        continue
+                rb = Restriction.RestrictionBatch(enzyme_list)
+            else:
+                # Use all commercial enzymes
+                rb = Restriction.CommOnly
+            
+            # Analyze sequence
+            analysis = rb.search(seq)
+            
+            # Filter enzymes that cut
+            cutters = {enz: sites for enz, sites in analysis.items() if sites}
+            
+            output = [f"Restriction Analysis ({len(seq)} bp)\n"]
+            output.append(f"Enzymes tested: {len(analysis)}")
+            output.append(f"Enzymes that cut: {len(cutters)}\n")
+            
+            if cutters:
+                output.append("Cutting Enzymes:")
+                for enz, sites in sorted(cutters.items(), key=lambda x: len(x[1]), reverse=True)[:20]:
+                    site_list = ', '.join(str(s) for s in sorted(sites)[:10])
+                    if len(sites) > 10:
+                        site_list += f"... (+{len(sites)-10} more)"
+                    output.append(f"  {enz}: {len(sites)} site(s) at {site_list}")
+            else:
+                output.append("No restriction sites found")
+            
+            return "\n".join(output)
+            
+        except Exception as e:
+            return f"Restriction analysis failed: {str(e)}"
+    
+    def restriction_map(self, sequence: str) -> str:
+        """Generate restriction map showing all sites
+        
+        Args:
+            sequence: DNA sequence
+            
+        Returns:
+            str: Visual restriction map
+        """
+        try:
+            from Bio import Restriction
+            from Bio.Seq import Seq
+            
+            seq = Seq(sequence.upper().replace(' ', '').replace('\n', ''))
+            rb = Restriction.CommOnly
+            analysis = rb.search(seq)
+            
+            # Get all cutting positions
+            all_sites = []
+            for enz, sites in analysis.items():
+                if sites:
+                    for site in sites:
+                        all_sites.append((site, str(enz)))
+            
+            all_sites.sort()
+            
+            output = [f"Restriction Map ({len(seq)} bp):\n"]
+            
+            if all_sites:
+                # Show map
+                map_scale = min(100, len(seq))
+                output.append(f"Position  Enzyme(s)")
+                output.append("-" * 40)
+                
+                for pos, enz in all_sites[:30]:  # Show first 30 sites
+                    output.append(f"{pos:>8}  {enz}")
+                
+                if len(all_sites) > 30:
+                    output.append(f"... +{len(all_sites)-30} more sites")
+            else:
+                output.append("No restriction sites found")
+            
+            return "\n".join(output)
+            
+        except Exception as e:
+            return f"Restriction map generation failed: {str(e)}"
+    
+    def extract_sequence_features(self, sequence: str, seq_type: str = 'dna') -> str:
+        """Extract sequence features and statistics
+        
+        Args:
+            sequence: Input sequence
+            seq_type: 'dna', 'rna', or 'protein'
+            
+        Returns:
+            str: Feature analysis
+        """
+        try:
+            from Bio.Seq import Seq
+            from Bio.SeqUtils import gc_fraction
+            
+            seq = Seq(sequence.upper().replace(' ', '').replace('\n', ''))
+            
+            output = [f"Sequence Features ({seq_type.upper()}):\n"]
+            output.append(f"Length: {len(seq)} bp")
+            
+            if seq_type.lower() in ['dna', 'rna']:
+                # Nucleotide features
+                gc = gc_fraction(seq) * 100
+                output.append(f"GC Content: {gc:.2f}%")
+                output.append(f"AT Content: {100-gc:.2f}%")
+                
+                # Count bases
+                if seq_type.lower() == 'dna':
+                    output.append(f"\nBase Composition:")
+                    output.append(f"  A: {seq.count('A')} ({seq.count('A')/len(seq)*100:.1f}%)")
+                    output.append(f"  T: {seq.count('T')} ({seq.count('T')/len(seq)*100:.1f}%)")
+                    output.append(f"  G: {seq.count('G')} ({seq.count('G')/len(seq)*100:.1f}%)")
+                    output.append(f"  C: {seq.count('C')} ({seq.count('C')/len(seq)*100:.1f}%)")
+                
+                # Find repeats
+                output.append(f"\nDinucleotide Repeats:")
+                for di in ['AA', 'TT', 'GG', 'CC', 'AT', 'TA', 'GC', 'CG']:
+                    count = str(seq).count(di)
+                    if count > 5:
+                        output.append(f"  {di}: {count}")
+            
+            elif seq_type.lower() == 'protein':
+                # Protein features
+                from Bio.SeqUtils.ProtParam import ProteinAnalysis
+                pa = ProteinAnalysis(str(seq))
+                
+                output.append(f"Molecular Weight: {pa.molecular_weight():.2f} Da")
+                output.append(f"Isoelectric Point: {pa.isoelectric_point():.2f}")
+                output.append(f"Aromaticity: {pa.aromaticity():.3f}")
+                
+                # Secondary structure prediction
+                sec_struc = pa.secondary_structure_fraction()
+                output.append(f"\nSecondary Structure Prediction:")
+                output.append(f"  Helix: {sec_struc[0]*100:.1f}%")
+                output.append(f"  Turn: {sec_struc[1]*100:.1f}%")
+                output.append(f"  Sheet: {sec_struc[2]*100:.1f}%")
+            
+            return "\n".join(output)
+            
+        except Exception as e:
+            return f"Feature extraction failed: {str(e)}"
+    
+    def transcribe_sequence(self, sequence: str) -> str:
+        """Transcribe DNA to RNA
+        
+        Args:
+            sequence: DNA sequence
+            
+        Returns:
+            str: RNA sequence
+        """
+        try:
+            from Bio.Seq import Seq
+            
+            seq = Seq(sequence.upper().replace(' ', '').replace('\n', ''))
+            rna = seq.transcribe()
+            
+            return f"DNA: {sequence}\nRNA: {rna}"
+            
+        except Exception as e:
+            return f"Transcription failed: {str(e)}"
+    
+    def back_transcribe(self, sequence: str) -> str:
+        """Back-transcribe RNA to DNA
+        
+        Args:
+            sequence: RNA sequence
+            
+        Returns:
+            str: DNA sequence
+        """
+        try:
+            from Bio.Seq import Seq
+            
+            seq = Seq(sequence.upper().replace(' ', '').replace('\n', ''))
+            dna = seq.back_transcribe()
+            
+            return f"RNA: {sequence}\nDNA: {dna}"
+            
+        except Exception as e:
+            return f"Back-transcription failed: {str(e)}"
+    
+    def codon_optimize(self, sequence: str, organism: str = 'human') -> str:
+        """Optimize codon usage for expression (simplified)
+        
+        Args:
+            sequence: Protein or DNA sequence
+            organism: Target organism ('human', 'ecoli', 'yeast')
+            
+        Returns:
+            str: Codon optimization analysis
+        """
+        try:
+            from Bio.Seq import Seq
+            from Bio.Data import CodonTable
+            
+            seq = Seq(sequence.upper().replace(' ', '').replace('\n', ''))
+            
+            # If DNA, translate first
+            if all(c in 'ATGC' for c in str(seq)):
+                protein = seq.translate()
+                is_dna = True
+            else:
+                protein = seq
+                is_dna = False
+            
+            # Get codon table
+            table = CodonTable.unambiguous_dna_by_name["Standard"]
+            
+            output = [f"Codon Optimization Analysis (Target: {organism}):\n"]
+            
+            if is_dna:
+                output.append(f"Original DNA: {sequence[:60]}...")
+                output.append(f"Protein: {protein[:30]}...")
+                
+                # Analyze codon usage
+                codons = [str(seq)[i:i+3] for i in range(0, len(seq)-2, 3)]
+                output.append(f"\nCodon count: {len(codons)}")
+                
+                # Find rare codons (simplified - actual optimization needs codon usage tables)
+                rare_codons = ['CTA', 'CGA', 'CGG', 'ATA', 'TTA']
+                rare_count = sum(1 for c in codons if c in rare_codons)
+                output.append(f"Potential rare codons: {rare_count}")
+                
+                if rare_count > 0:
+                    output.append("\nNote: Consider optimizing rare codons for better expression")
+            else:
+                output.append(f"Protein: {protein}")
+                output.append("\nNote: Provide DNA sequence for detailed codon optimization")
+            
+            return "\n".join(output)
+            
+        except Exception as e:
+            return f"Codon optimization failed: {str(e)}"
+    
+    def pairwise_comparison(self, seq1: str, seq2: str) -> str:
+        """Detailed pairwise sequence comparison with statistics
+        
+        Args:
+            seq1: First sequence
+            seq2: Second sequence
+            
+        Returns:
+            str: Comparison statistics
+        """
+        try:
+            from Bio import pairwise2
+            from Bio.Seq import Seq
+            
+            s1 = Seq(seq1.upper().replace(' ', '').replace('\n', ''))
+            s2 = Seq(seq2.upper().replace(' ', '').replace('\n', ''))
+            
+            # Perform alignment
+            alignments = pairwise2.align.globalxx(s1, s2, one_alignment_only=True)
+            
+            if not alignments:
+                return "No alignment found"
+            
+            alignment = alignments[0]
+            
+            # Calculate identity
+            matches = sum(1 for a, b in zip(alignment.seqA, alignment.seqB) if a == b and a != '-')
+            identity = (matches / max(len(s1), len(s2))) * 100
+            
+            output = ["Pairwise Sequence Comparison:\n"]
+            output.append(f"Sequence 1 length: {len(s1)}")
+            output.append(f"Sequence 2 length: {len(s2)}")
+            output.append(f"Alignment score: {alignment.score}")
+            output.append(f"Identity: {identity:.2f}%")
+            output.append(f"Matches: {matches}")
+            
+            # Show alignment (first 60 chars)
+            output.append(f"\nAlignment preview:")
+            output.append(f"Seq1: {alignment.seqA[:60]}")
+            output.append(f"Seq2: {alignment.seqB[:60]}")
+            
+            return "\n".join(output)
+            
+        except Exception as e:
+            return f"Pairwise comparison failed: {str(e)}"
+    
+    def predict_secondary_structure(self, sequence: str) -> str:
+        """Predict protein secondary structure
+        
+        Args:
+            sequence: Protein sequence
+            
+        Returns:
+            str: Secondary structure prediction
+        """
+        try:
+            from Bio.SeqUtils.ProtParam import ProteinAnalysis
+            
+            seq = sequence.upper().replace(' ', '').replace('\n', '')
+            pa = ProteinAnalysis(seq)
+            
+            # Get secondary structure fractions
+            helix, turn, sheet = pa.secondary_structure_fraction()
+            
+            output = ["Secondary Structure Prediction:\n"]
+            output.append(f"Sequence length: {len(seq)} aa")
+            output.append(f"\nEstimated fractions:")
+            output.append(f"  α-Helix: {helix*100:.1f}%")
+            output.append(f"  β-Turn: {turn*100:.1f}%")
+            output.append(f"  β-Sheet: {sheet*100:.1f}%")
+            output.append(f"  Random coil: {(1-helix-turn-sheet)*100:.1f}%")
+            
+            output.append(f"\nNote: This is a simple statistical prediction.")
+            output.append("For accurate predictions, use tools like DSSP or PSIPRED.")
+            
+            return "\n".join(output)
+            
+        except Exception as e:
+            return f"Secondary structure prediction failed: {str(e)}"
+    
+    def hydrophobicity_plot(self, sequence: str) -> str:
+        """Calculate hydrophobicity profile using Kyte-Doolittle scale
+        
+        Args:
+            sequence: Protein sequence
+            
+        Returns:
+            str: Hydrophobicity analysis
+        """
+        try:
+            from Bio.SeqUtils.ProtParam import ProteinAnalysis
+            
+            seq = sequence.upper().replace(' ', '').replace('\n', '')
+            pa = ProteinAnalysis(seq)
+            
+            # Get hydrophobicity
+            hydro = pa.protein_scale(window=9)
+            
+            if not hydro:
+                return "Error: Sequence too short for hydrophobicity analysis (need >9 aa)"
+            
+            output = ["Hydrophobicity Analysis (Kyte-Doolittle):\n"]
+            output.append(f"Sequence length: {len(seq)} aa")
+            output.append(f"Window size: 9")
+            output.append(f"\nAverage hydrophobicity: {sum(hydro)/len(hydro):.3f}")
+            output.append(f"Maximum: {max(hydro):.3f}")
+            output.append(f"Minimum: {min(hydro):.3f}")
+            
+            # Identify hydrophobic regions (positive values)
+            hydrophobic_regions = [i for i, h in enumerate(hydro) if h > 1.0]
+            if hydrophobic_regions:
+                output.append(f"\nHydrophobic regions (score > 1.0): {len(hydrophobic_regions)} positions")
+            
+            # Show profile (sample every 10th position for brevity)
+            output.append(f"\nHydrophobicity profile (sample):")
+            for i in range(0, len(hydro), 10):
+                output.append(f"  Position {i+5}: {hydro[i]:.2f}")
+            
+            return "\n".join(output)
+            
+        except Exception as e:
+            return f"Hydrophobicity analysis failed: {str(e)}"
+    
+    def sequence_entropy(self, sequence: str) -> str:
+        """Calculate Shannon entropy of sequence
+        
+        Args:
+            sequence: DNA, RNA, or protein sequence
+            
+        Returns:
+            str: Entropy analysis
+        """
+        try:
+            import math
+            from collections import Counter
+            
+            seq = sequence.upper().replace(' ', '').replace('\n', '')
+            
+            # Calculate frequency
+            counts = Counter(seq)
+            total = len(seq)
+            
+            # Calculate Shannon entropy
+            entropy = 0
+            for count in counts.values():
+                p = count / total
+                entropy -= p * math.log2(p)
+            
+            # Maximum possible entropy
+            alphabet_size = len(counts)
+            max_entropy = math.log2(alphabet_size)
+            
+            # Normalized entropy
+            norm_entropy = entropy / max_entropy if max_entropy > 0 else 0
+            
+            output = ["Sequence Entropy Analysis:\n"]
+            output.append(f"Sequence length: {len(seq)}")
+            output.append(f"Alphabet size: {alphabet_size}")
+            output.append(f"Shannon entropy: {entropy:.3f} bits")
+            output.append(f"Maximum entropy: {max_entropy:.3f} bits")
+            output.append(f"Normalized entropy: {norm_entropy:.3f}")
+            
+            output.append(f"\nSymbol frequencies:")
+            for symbol, count in sorted(counts.items()):
+                freq = count / total
+                output.append(f"  {symbol}: {count} ({freq*100:.1f}%)")
+            
+            if norm_entropy > 0.9:
+                output.append("\n✓ High complexity sequence (diverse)")
+            elif norm_entropy < 0.5:
+                output.append("\n⚠ Low complexity sequence (repetitive)")
+            else:
+                output.append("\n• Moderate complexity")
+            
+            return "\n".join(output)
+            
+        except Exception as e:
+            return f"Entropy calculation failed: {str(e)}"
+    
+    def sequence_complexity(self, sequence: str) -> str:
+        """Analyze sequence complexity using multiple metrics
+        
+        Args:
+            sequence: Input sequence
+            
+        Returns:
+            str: Complexity analysis
+        """
+        try:
+            from collections import Counter
+            import math
+            
+            seq = sequence.upper().replace(' ', '').replace('\n', '')
+            
+            # Calculate various complexity metrics
+            
+            # 1. Base composition evenness
+            counts = Counter(seq)
+            total = len(seq)
+            
+            # 2. Longest homopolymer run
+            max_run = 1
+            current_run = 1
+            for i in range(1, len(seq)):
+                if seq[i] == seq[i-1]:
+                    current_run += 1
+                    max_run = max(max_run, current_run)
+                else:
+                    current_run = 1
+            
+            # 3. Dinucleotide diversity
+            dinucs = [seq[i:i+2] for i in range(len(seq)-1)]
+            dinuc_diversity = len(set(dinucs))
+            
+            # 4. Shannon entropy
+            entropy = 0
+            for count in counts.values():
+                p = count / total
+                entropy -= p * math.log2(p)
+            
+            output = ["Sequence Complexity Analysis:\n"]
+            output.append(f"Length: {len(seq)}")
+            output.append(f"Unique symbols: {len(counts)}")
+            output.append(f"Shannon entropy: {entropy:.3f} bits")
+            output.append(f"Longest run: {max_run} ('{seq[0]}')")
+            output.append(f"Dinucleotide diversity: {dinuc_diversity}")
+            
+            # Complexity assessment
+            output.append("\nComplexity Assessment:")
+            if max_run > 10:
+                output.append(f"  ⚠ Long homopolymer run ({max_run} bp)")
+            if entropy < 1.5:
+                output.append("  ⚠ Low entropy (repetitive)")
+            if dinuc_diversity < 10:
+                output.append("  ⚠ Low dinucleotide diversity")
+            
+            if max_run <= 10 and entropy >= 1.5 and dinuc_diversity >= 10:
+                output.append("  ✓ Good sequence complexity")
+            
+            return "\n".join(output)
+            
+        except Exception as e:
+            return f"Complexity analysis failed: {str(e)}"
 
 
 if __name__ == "__main__":

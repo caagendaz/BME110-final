@@ -303,41 +303,60 @@ def main():
         st.subheader("Ask a bioinformatics question")
         st.write("Describe what you want to do with your sequences in natural language.")
         
-        # Optional FASTA file upload
-        with st.expander("📁 Optional: Upload FASTA file to reference in your query"):
-            uploaded_fasta = st.file_uploader(
-                "Upload FASTA file (optional):",
+        # Optional FASTA file upload (supports multiple files)
+        with st.expander("📁 Optional: Upload FASTA file(s) to reference in your query"):
+            uploaded_files = st.file_uploader(
+                "Upload FASTA file(s) (optional):",
                 type=["fasta", "fa", "faa", "fna", "txt"],
-                help="Upload a FASTA file, then reference it in your query like 'analyze the sequences in the file'",
-                key="nlp_fasta_upload"
+                help="Upload one or more FASTA files. Use for batch analysis or comparing sequences from different files.",
+                key="nlp_fasta_upload",
+                accept_multiple_files=True
             )
             
-            if uploaded_fasta:
-                content = uploaded_fasta.read().decode('utf-8')
-                sequences = parse_fasta(content)
+            if uploaded_files:
+                all_sequences = []
+                file_info = []
                 
-                if sequences:
-                    st.success(f"✓ Loaded {len(sequences)} sequence(s) from {uploaded_fasta.name}")
+                for uploaded_file in uploaded_files:
+                    content = uploaded_file.read().decode('utf-8')
+                    sequences = parse_fasta(content)
+                    
+                    if sequences:
+                        file_info.append((uploaded_file.name, len(sequences)))
+                        # Tag sequences with their source file
+                        for header, seq in sequences:
+                            all_sequences.append((f"{uploaded_file.name}: {header}", seq))
+                
+                if all_sequences:
+                    total_files = len(uploaded_files)
+                    total_seqs = len(all_sequences)
+                    st.success(f"✓ Loaded {total_seqs} sequence(s) from {total_files} file(s)")
                     
                     # Store in session state for use in queries
-                    st.session_state['uploaded_sequences'] = sequences
-                    st.session_state['uploaded_filename'] = uploaded_fasta.name
+                    st.session_state['uploaded_sequences'] = all_sequences
+                    st.session_state['uploaded_files_info'] = file_info
                     
-                    # Show preview
+                    # Show preview grouped by file
                     with st.expander("Preview sequences"):
-                        for i, (header, seq) in enumerate(sequences[:3], 1):
+                        for filename, seq_count in file_info:
+                            st.markdown(f"**{filename}** ({seq_count} sequences)")
+                        
+                        st.markdown("---")
+                        st.caption("First 3 sequences:")
+                        for i, (header, seq) in enumerate(all_sequences[:3], 1):
                             st.text(f">{header}")
                             st.text(f"{seq[:80]}{'...' if len(seq) > 80 else ''}")
-                        if len(sequences) > 3:
-                            st.caption(f"... and {len(sequences) - 3} more")
+                        if len(all_sequences) > 3:
+                            st.caption(f"... and {len(all_sequences) - 3} more")
                     
                     st.info("💡 Now you can reference these sequences in your query!\n\n"
                            "Examples:\n"
                            "- 'Find the GC content of the sequences in the file'\n"
-                           "- 'Translate all sequences in the uploaded file'\n"
+                           "- 'Translate all sequences in the uploaded files'\n"
+                           "- 'Make a dot plot comparing sequences from file 1 and file 2'\n"
                            "- 'Calculate protein stats for the sequences'")
                 else:
-                    st.warning("No sequences found. Make sure file is in FASTA format.")
+                    st.warning("No sequences found. Make sure files are in FASTA format.")
         
         col1, col2 = st.columns([3, 1])
         with col1:
@@ -1236,39 +1255,99 @@ def main():
     with tab4:
         st.subheader("Upload and analyze FASTA files")
         
-        st.info("Upload a FASTA file to analyze multiple sequences at once. Select a tool to apply to all sequences.")
+        st.info("Upload FASTA file(s) to analyze multiple sequences. For single file: batch processing. For multiple files: compare sequences across files.")
         
-        # File upload
-        uploaded_file = st.file_uploader(
-            "Choose a FASTA file:",
+        # File upload (supports multiple)
+        uploaded_files = st.file_uploader(
+            "Choose FASTA file(s):",
             type=["fasta", "fa", "faa", "fna", "txt"],
-            help="Upload a file containing sequences in FASTA format"
+            help="Upload one or more files containing sequences in FASTA format",
+            accept_multiple_files=True
         )
         
-        if uploaded_file:
-            st.success(f"✓ File uploaded: {uploaded_file.name}")
+        if uploaded_files:
+            num_files = len(uploaded_files)
+            st.success(f"✓ {num_files} file(s) uploaded")
             
-            # Read and parse file
+            # Read and parse all files
             try:
-                content = uploaded_file.read().decode('utf-8')
-                sequences = parse_fasta(content)
+                all_sequences = []
+                file_sequence_map = {}
                 
-                if not sequences:
-                    st.warning("No sequences found in file. Make sure it's in FASTA format (headers start with '>').")
+                for uploaded_file in uploaded_files:
+                    content = uploaded_file.read().decode('utf-8')
+                    sequences = parse_fasta(content)
+                    
+                    if sequences:
+                        file_sequence_map[uploaded_file.name] = sequences
+                        # Tag sequences with file name for clarity
+                        for header, seq in sequences:
+                            all_sequences.append((f"[{uploaded_file.name}] {header}", seq))
+                
+                if not all_sequences:
+                    st.warning("No sequences found in files. Make sure they're in FASTA format (headers start with '>').")
                 else:
-                    st.info(f"Found {len(sequences)} sequence(s) in file")
+                    total_seqs = len(all_sequences)
+                    st.info(f"Found {total_seqs} sequence(s) across {num_files} file(s)")
                     
-                    # Show preview
+                    # Show preview grouped by file
                     with st.expander("📄 Preview sequences"):
-                        for i, (header, seq) in enumerate(sequences[:5], 1):  # Show first 5
-                            st.text(f">{header}")
-                            st.text(f"{seq[:100]}{'...' if len(seq) > 100 else ''}")
-                            st.caption(f"Length: {len(seq)} bp/aa")
+                        for filename, sequences in file_sequence_map.items():
+                            st.markdown(f"**{filename}** ({len(sequences)} sequences)")
+                            for i, (header, seq) in enumerate(sequences[:2], 1):  # Show first 2 per file
+                                st.text(f"  >{header}")
+                                st.text(f"  {seq[:80]}{'...' if len(seq) > 80 else ''}")
+                            if len(sequences) > 2:
+                                st.caption(f"  ... and {len(sequences) - 2} more from this file")
                             st.markdown("---")
-                        if len(sequences) > 5:
-                            st.caption(f"... and {len(sequences) - 5} more sequences")
                     
-                    st.markdown("---")
+                    # Special handling for 2 files (comparison mode)
+                    if num_files == 2:
+                        st.markdown("### 🔀 Two-File Comparison Mode")
+                        st.info("With 2 files, you can compare sequences between them!")
+                        
+                        file_names = list(file_sequence_map.keys())
+                        file1_seqs = file_sequence_map[file_names[0]]
+                        file2_seqs = file_sequence_map[file_names[1]]
+                        
+                        comparison_tool = st.selectbox(
+                            "Comparison tool:",
+                            ["dotplot", "align", "None - batch process each file separately"],
+                            help="Choose a tool to compare sequences from the two files"
+                        )
+                        
+                        if comparison_tool != "None - batch process each file separately":
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                seq1_idx = st.selectbox(
+                                    f"Sequence from {file_names[0]}:",
+                                    range(len(file1_seqs)),
+                                    format_func=lambda i: f"{file1_seqs[i][0][:50]}..."
+                                )
+                            with col2:
+                                seq2_idx = st.selectbox(
+                                    f"Sequence from {file_names[1]}:",
+                                    range(len(file2_seqs)),
+                                    format_func=lambda i: f"{file2_seqs[i][0][:50]}..."
+                                )
+                            
+                            if st.button("🔬 Compare Selected Sequences", type="primary"):
+                                seq1_header, seq1 = file1_seqs[seq1_idx]
+                                seq2_header, seq2 = file2_seqs[seq2_idx]
+                                
+                                st.markdown("#### Comparison Results:")
+                                st.write(f"**Sequence 1:** {seq1_header}")
+                                st.write(f"**Sequence 2:** {seq2_header}")
+                                
+                                try:
+                                    result = emboss.run_tool(comparison_tool, seq1=seq1, seq2=seq2)
+                                    display_result(result)
+                                except Exception as e:
+                                    st.error(f"Error: {str(e)}")
+                            
+                            st.markdown("---")
+                    
+                    st.markdown("### 📊 Batch Processing Mode")
                     
                     # Tool selection for batch processing
                     st.subheader("Select tool to apply")
@@ -1303,21 +1382,21 @@ def main():
                         status_text = st.empty()
                         results_container = st.container()
                         
-                        all_results = []
+                        batch_results = []
                         
                         with results_container:
-                            for i, (header, seq) in enumerate(sequences):
-                                progress = (i + 1) / len(sequences)
+                            for i, (header, seq) in enumerate(all_sequences):
+                                progress = (i + 1) / len(all_sequences)
                                 progress_bar.progress(progress)
-                                status_text.text(f"Processing {i+1}/{len(sequences)}: {header[:50]}...")
+                                status_text.text(f"Processing {i+1}/{len(all_sequences)}: {header[:50]}...")
                                 
                                 try:
                                     # Use the generic run_tool method with sequence parameter
                                     result = emboss.run_tool(batch_tool, sequence=seq, **params)
-                                    all_results.append((header, result))
+                                    batch_results.append((header, result))
                                     
                                 except Exception as e:
-                                    all_results.append((header, f"ERROR: {str(e)}"))
+                                    batch_results.append((header, f"ERROR: {str(e)}"))
                             
                             status_text.text("✓ Analysis complete!")
                             progress_bar.progress(1.0)
@@ -1326,13 +1405,13 @@ def main():
                         st.markdown("---")
                         st.subheader("📊 Results")
                         
-                        for header, result in all_results:
+                        for header, result in batch_results:
                             with st.expander(f"📄 {header}"):
-                                st.code(result, language="text")
+                                display_result(result)
                         
                         # Download all results
                         combined_results = ""
-                        for header, result in all_results:
+                        for header, result in batch_results:
                             combined_results += f"{'='*60}\n"
                             combined_results += f"Sequence: {header}\n"
                             combined_results += f"Tool: {batch_tool}\n"

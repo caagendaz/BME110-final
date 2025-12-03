@@ -97,6 +97,25 @@ EMBOSS tools (use 'sequence' for raw DNA/protein sequences):
 - pepstats: Calculate protein statistics (molecular weight, amino acid composition, charge, etc.). Needs "sequence" (protein). USE THIS for "molecular weight", "MW", "mass"
 - iep: Calculate isoelectric point (pI) of a protein. Needs "sequence" (protein). USE THIS for "isoelectric point", "pI"
 - cusp: Calculate codon usage statistics. Needs "sequence" (DNA). USE THIS for "codon usage"
+
+BIOPYTHON TOOLS:
+- msa: Multiple sequence alignment. Needs "sequences" as list of (name, seq) tuples
+- pdb: Get protein 3D structure info from PDB. Needs "pdb_id" (e.g., "3J7Y")
+- protparam: Advanced protein analysis (MW, pI, aromaticity, instability). Needs "sequence" (protein)
+- phylo: Build phylogenetic tree from sequences. Needs "sequences" as list of (name, seq) tuples. USE THIS for "phylogenetic tree", "evolutionary tree"
+- motif: Find common motifs in sequences. Needs "sequences" as list of (name, seq) tuples
+- primer: Analyze primer properties (Tm, GC content, quality checks). Needs "sequence" (DNA primer)
+- restriction_batch: Batch restriction enzyme analysis. Needs "sequence" (DNA) and optional "enzymes" list
+- restriction_map: Generate restriction site map. Needs "sequence" (DNA)
+- extract_features: Extract sequence features and statistics. Needs "sequence" and optional "seq_type" (dna/rna/protein)
+- transcribe: Transcribe DNA to RNA. Needs "sequence" (DNA)
+- back_transcribe: Back-transcribe RNA to DNA. Needs "sequence" (RNA)
+- codon_optimize: Analyze codon optimization. Needs "sequence" and optional "organism" (human/ecoli/yeast)
+- pairwise_compare: Detailed pairwise comparison. Needs "seq1" and "seq2"
+- secondary_structure: Predict protein secondary structure. Needs "sequence" (protein)
+- hydrophobicity: Calculate hydrophobicity profile (Kyte-Doolittle). Needs "sequence" (protein)
+- entropy: Calculate sequence entropy/diversity. Needs "sequence"
+- complexity: Analyze sequence complexity metrics. Needs "sequence"
 """
         
         if self.mode == 'cloud':
